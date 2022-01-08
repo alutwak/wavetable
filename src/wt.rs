@@ -1,4 +1,3 @@
-
 use std::f32::consts::PI;
 
 const XLOBITS1: i32 = 16;
@@ -122,8 +121,7 @@ const XLOBITS1: i32 = 16;
 /// representation, equals `1.m`, `m` being the phase's fractional component. If we just wanted the pure fractional part then
 /// we would have to subtract the 1.0 from the value, but because of the way that the two tables were pre-calculated, this
 /// value can simply be multiplied by the value at index `n` of `table2`.
-pub struct Wavetable
-{
+pub struct Wavetable {
     // Stores 2 * x[n] - x[n+1]
     table1: Vec<f32>,
     // Stores x[n + 1] - x[n]
@@ -138,11 +136,9 @@ pub struct Wavetable
     // Converts frequency (in cycles per second) to table index increments per output samples
     cpstoinc: f32,
     // sampledur: f32
-
 }
 
-impl Wavetable
-{
+impl Wavetable {
     /// Creates a new Wavetable
     ///
     /// # Arguments
@@ -159,11 +155,18 @@ impl Wavetable
     /// let table = Vec::from_iter((0..128).map(|v| -> f32 {v as f32}));
     /// let mut wt = Wavetable::new(&table, sampledur);
     /// ```
-    pub fn new(table: &[f32], sampledur: f32) -> Wavetable
-    {
+    pub fn new(table: &[f32], sampledur: f32) -> Self {
         let size = table.len();
-        assert_eq!(size & (size - 1), 0, "Wavetable size must be a power of two. Got {}", size);
-        assert!(size <= 131072, "Phase computation is not precise for wavetables longer than (2**17)");
+        assert_eq!(
+            size & (size - 1),
+            0,
+            "Wavetable size must be a power of two. Got {}",
+            size
+        );
+        assert!(
+            size <= 131072,
+            "Phase computation is not precise for wavetables longer than (2**17)"
+        );
 
         let sizef32 = size as f32;
 
@@ -171,10 +174,10 @@ impl Wavetable
             table1: Vec::with_capacity(size),
             table2: Vec::with_capacity(size),
             phase: 0,
-            // sampledur,
 
+            // sampledur,
             lomask: (size - 1) as i32,
-            radtoinc: 65536.0 * sizef32/(2.0 * PI),
+            radtoinc: 65536.0 * sizef32 / (2.0 * PI),
             cpstoinc: sizef32 * sampledur * 65536.0,
         };
 
@@ -214,7 +217,7 @@ impl Wavetable
     #[inline]
     fn interpolate(&self, phase: i32) -> f32 {
         let frac = phase_frac1(phase);
-        let index: usize = ((phase >> XLOBITS1) & self.lomask) as usize;
+        let index = ((phase >> XLOBITS1) & self.lomask) as usize;
         self.table1[index] + (frac * self.table2[index])
     }
 }
@@ -222,19 +225,16 @@ impl Wavetable
 #[repr(C)]
 union PhaseConv {
     iphase: i32,
-    fphase: f32
+    fphase: f32,
 }
 
 #[inline]
 fn phase_frac1(phase: i32) -> f32 {
     let p = PhaseConv {
-        iphase: 0x3F800000 | (0x007FFF80 & ((phase) << 7))
+        iphase: 0x3F800000 | (0x007FFF80 & ((phase) << 7)),
     };
-    unsafe {
-        p.fphase
-    }
+    unsafe { p.fphase }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -242,20 +242,20 @@ mod tests {
     use float_cmp::approx_eq;
 
     fn generate_ramp(len: usize) -> Vec<f32> {
-        Vec::from_iter((0..len).map(|v| -> f32 {v as f32}))
+        Vec::from_iter((0..len).map(|v| -> f32 { v as f32 }))
     }
 
     #[test]
     fn test_create_wavetable() {
         let table = generate_ramp(128);
-        let _wt = Wavetable::new(&table, 1.0/48000.0);
+        let _wt = Wavetable::new(&table, 1.0 / 48000.0);
     }
 
     #[test]
     #[should_panic(expected = "Wavetable size must be a power of two. Got 127")]
     fn test_create_wavetable_bad() {
         let table = generate_ramp(127);
-        let _wt = Wavetable::new(&table, 1.0/48000.0);
+        let _wt = Wavetable::new(&table, 1.0 / 48000.0);
     }
 
     #[test]
@@ -267,7 +267,7 @@ mod tests {
         let table_len = 128;
 
         let table = generate_ramp(table_len);
-        let mut wt = Wavetable::new(&table, 1.0/fs);
+        let mut wt = Wavetable::new(&table, 1.0 / fs);
 
         let freq = [1.0f32; 1025];
         let phase = [0.0f32; 1025];
@@ -283,10 +283,17 @@ mod tests {
             let expected = if i <= rise_samples {
                 (table_len * i) as f32 / fs
             } else {
-                (table_len - 1) as f32 * (1.0 - ((i - rise_samples) as f32)/(samples_per_index as f32))
+                (table_len - 1) as f32
+                    * (1.0 - ((i - rise_samples) as f32) / (samples_per_index as f32))
             };
-            assert!(approx_eq!(f32, *v, expected, epsilon = 1e-3),
-                    "out[{}] = {}, expected: {}, diff: {}", i, *v, expected, num::abs(*v - expected));
+            assert!(
+                approx_eq!(f32, *v, expected, epsilon = 1e-3),
+                "out[{}] = {}, expected: {}, diff: {}",
+                i,
+                *v,
+                expected,
+                num::abs(*v - expected)
+            );
         }
     }
 }
