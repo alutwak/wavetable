@@ -120,6 +120,8 @@ use crate::env::EnvStage::*;
 mod tests {
     use super::*;
     use float_cmp::approx_eq;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn test_create_asdr() {
@@ -193,5 +195,61 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn test_asdr_thread() {
+        let gate = create_gate(0.0);
+        let reader_gate = Arc::clone(&gate);
+        let mut asdr = ASDR::new(128, 128, 0.5, 128, &gate);
+
+        let read_thread = thread::spawn(move || {
+            let mut buffer = [0.0; 128];
+
+            // Assert that the output stays at 0 until gate is opened
+            println!("Reader: waiting for gate to open");
+            while read_gate(&reader_gate) == 0.0 {
+                asdr.perform(&mut buffer);
+                for v in buffer.iter() {
+                    assert!(
+                        *v == 0.0 || read_gate(&reader_gate) > 0.0,
+                        "Output rose above 0 before gate was opened"
+                    );
+                }
+            }
+
+            // Assert that output doesn't return to 0 until gate is closed
+            println!("Reader: gate opened! Waiting for gate to close.");
+            while read_gate(&reader_gate) > 0.0 {
+                asdr.perform(&mut buffer);
+                for v in buffer.iter() {
+                    assert!(
+                        *v > 0.0 || read_gate(&reader_gate) <= 0.0,
+                        "Output dropped below 0 before gate was closed"
+                    );
+                }
+            }
+
+            println!("Reader: gate closed! Checking release behavior.");
+            // Read 128 samples, which is the length of the release
+            asdr.perform(&mut buffer);
+            assert_eq!(
+                buffer[buffer.len() - 1],
+                0.0,
+                "The output did not make it to 0.0 within the release time"
+            );
+        });
+
+        // Open gate after 1 second
+        thread::sleep(Duration::from_secs(1));
+        println!("Opening gate!");
+        open_gate(&gate);
+
+        // Close gate after another second
+        thread::sleep(Duration::from_secs(1));
+        println!("Closing gate!");
+        close_gate(&gate);
+
+        read_thread.join().unwrap();
     }
 }
