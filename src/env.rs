@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 pub type Gate = Arc<Mutex<f32>>;
 
 pub struct ASDR {
-    pub att: f32,
-    pub dec: f32,
+    pub att: u64,
+    pub dec: u64,
     pub sus: f32,
-    pub rel: f32,
+    pub rel: u64,
 
     gate: Gate,
     prev_gate: f32,
@@ -18,12 +18,12 @@ pub struct ASDR {
 }
 
 impl ASDR {
-    pub fn new(att: u64, dec: u64, sus: f32, rel: u64, gate: &Gate) -> Self {
+    pub fn new(att: f32, dec: f32, sus: f32, rel: f32, fs: f32, gate: &Gate) -> Self {
         ASDR {
-            att: att as f32,
-            dec: dec as f32,
+            att: (att * fs) as u64,
+            dec: (dec * fs) as u64,
             sus,
-            rel: rel as f32,
+            rel: (rel * fs) as u64,
 
             gate: Arc::clone(gate),
             prev_gate: *gate.lock().unwrap(),
@@ -40,20 +40,20 @@ impl ASDR {
         let g = *self.gate.lock().unwrap();
         if g <= 0.0 && self.prev_gate > 0.0 {
             self.stage = Rel;
-            self.counter = self.rel as u64;
+            self.counter = self.rel;
             self.slope = -self.level / self.rel as f32;
             self.prev_gate = g;
         } else if g > 0.0 && self.prev_gate <= 0.0 {
             self.stage = Att;
-            self.counter = self.att as u64;
-            self.slope = 1.0 / self.att as f32;
+            self.counter = self.att;
+            self.slope = (1.0 - self.level) / self.att as f32;
             self.prev_gate = g;
         } else if self.counter == 0 {
             match self.stage {
                 Att => {
                     self.stage = Dec;
-                    self.counter = self.dec as u64;
-                    self.slope = (self.sus - 1.0) / self.dec;
+                    self.counter = self.dec;
+                    self.slope = (self.sus - 1.0) / self.dec as f32;
                 }
                 Dec => {
                     self.stage = Sus;
@@ -126,13 +126,13 @@ mod tests {
     #[test]
     fn test_create_asdr() {
         let gate = create_gate(0.0);
-        let _asdr = ASDR::new(100, 100, 0.5, 100, &gate);
+        let _asdr = ASDR::new(100.0, 100.0, 0.5, 100.0, 1.0, &gate);
     }
 
     #[test]
     fn test_asdr_off() {
         let gate = create_gate(0.0);
-        let mut asdr = ASDR::new(100, 100, 0.5, 100, &gate);
+        let mut asdr = ASDR::new(100.0, 100.0, 0.5, 100.0, 1.0, &gate);
         let mut buffer = [0.0; 1000];
         asdr.perform(&mut buffer);
         for (i, val) in buffer.iter().enumerate() {
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn test_asdr() {
         let gate = create_gate(0.0);
-        let mut asdr = ASDR::new(128, 128, 0.5, 128, &gate);
+        let mut asdr = ASDR::new(128.0, 128.0, 0.5, 128.0, 1.0, &gate);
         let mut buffer = [0.0; 1000];
 
         // Open the gate
@@ -201,7 +201,7 @@ mod tests {
     fn test_asdr_thread() {
         let gate = create_gate(0.0);
         let reader_gate = Arc::clone(&gate);
-        let mut asdr = ASDR::new(128, 128, 0.5, 128, &gate);
+        let mut asdr = ASDR::new(128.0, 128.0, 0.5, 128.0, 1.0, &gate);
 
         let read_thread = thread::spawn(move || {
             let mut buffer = [0.0; 128];
