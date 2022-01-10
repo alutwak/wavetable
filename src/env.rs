@@ -2,10 +2,25 @@ use std::sync::{Arc, Mutex};
 
 pub type Gate = Arc<Mutex<f32>>;
 
+/** An ASDR envelope with linear stages
+
+The envelope works on a range of [0, 1], so the peak amplitude will need to be adjusted by multiplying its output. This may
+be adjusted in the future to increase efficiency.
+
+The envelope is triggered by a gate, which is represented by an f32 Mutex. When the gate is considered to be open when its
+value is >= 0.0 and otherwise it's considered to be closed. The envelope sequence begins at the gate's rising edge
+(transitioning from closed to open), and it will continue through the attack, decay and sustain stages as long as the gate
+remains upen. The release stage is triggered on the gate's falling edge (transitioning from open to close) and will
+continue until either the envelope output reaches 0.0 or the gate opens again.
+*/
 pub struct ASDR {
+    /// Length of the attack, in cps (cycles per second).
     pub att: u64,
+    /// Length of the decay, in cps.
     pub dec: u64,
+    /// Amplitude of the sustain. Should be in a range of [0, 1] for a normal envelope shape.
     pub sus: f32,
+    /// Length of the release, in cps.
     pub rel: u64,
 
     gate: Gate,
@@ -18,6 +33,17 @@ pub struct ASDR {
 }
 
 impl ASDR {
+    /** Creates a new ASDR envelope
+
+    # Arguments
+
+    * `att`: Attack time (in seconds)
+    * `dec`: Decay time (in seconds)
+    * `sus`: Sustain amplitude. Should be in a range of [0, 1] for a normal envelope shape.
+    * `rel`: Release time (in seconds)
+    * `fs`:  Sampling frequency (in Hz)
+    * `gate`: The envelope's gate
+    */
     pub fn new(att: f32, dec: f32, sus: f32, rel: f32, fs: f32, gate: &Gate) -> Self {
         ASDR {
             att: (att * fs) as u64,
@@ -68,6 +94,14 @@ impl ASDR {
         }
     }
 
+    /** Performs the envelope operation.
+
+    Calculates the next output.len() samples and loads them into the output buffer.
+
+    # Arguments
+
+    * `outbuf`: A buffer for storing the output samples.
+    */
     pub fn perform(&mut self, outbuf: &mut [f32]) {
         for out in outbuf {
             if !(self.stage == Done || self.stage == Sus) {
