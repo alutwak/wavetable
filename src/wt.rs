@@ -1,9 +1,6 @@
 use std::f32::consts::PI;
 
-const XLOBITS1: i32 = 16;
-
-/**
-An interpolating wavetable oscillator
+/** An interpolating wavetable oscillator
 
 Because of the requirements of the interpolation algorithm used, there are a couple of limits on the acceptable table
 size:
@@ -23,30 +20,25 @@ Note: The algorithms used for this implementation were based off of supercollide
 
 ```
 # use wavetable::wt::Wavetable;
-// Create 44.1kHz wavetable that ramps from 0 to 128.
-let sampledur = 1.0/44100.0;
+// Create a wavetable that ramps from 0 to 128.
 let table = Vec::from_iter((0..128).map(|v| -> f32 {v as f32}));
-let mut wt = Wavetable::new(&table, sampledur);
+let wt = Wavetable::new(&table);
+
+// Create 44.1kHz phasor
+let sampledur = 1.0/44100.0;
+let mut phasor = wt.new_phasor(sampledur);
 
 // Generate 1 second of a 440Hz waveform
 let freq = [440.0; 44100];
 let phase = [0.0f32; 44100];
 let mut outbuf = [0.0f32; 1025];
-wt.perform(&mut outbuf, &freq, &phase);
+phasor.perform(&mut outbuf, &freq, &phase);
 ```
 
-# A bit more on the algorithms
+# Linear interpolation algorithm
 
-## Linear interpolation
-
-This wavetable uses linear interpolation to generate signals of arbitrary frequency. The wavetable's phase is tracked
-using a 32-bit, fixed-point value (signed to enable negative frequencies). Using a fixed-point value prevents the noise
-and modulation that floating point precision errors would introduce. The upshot of this is that the phase will change at
-a constant, predictable rate, but that the input frequencies and phase offsets (which are floating point) will be
-quantized (notice how both of these are cast to i32 values in Wavetable::perform()).
-
-For a given wavetable, you can calulate the linear interpolation a phase of n.m (which is 0.m points between index n and
-n+1) using the following equation:
+This wavetable uses linear interpolation to generate signals of arbitrary frequency. For a given wavetable, you can calulate
+the linear interpolation a phase of n.m (which is 0.m points between index n and n+1) using the following equation:
 
 ```ignore
 y(n.m) = x[n] + 0.m * (x[n + 1] - x[n])
@@ -77,14 +69,29 @@ out = tbl1 + (tbl2 * (1 + m))
     = 2a - b + (b - a) + (b - a) * m
     = a + (b - a) * m
 ```
+*/
+pub struct Wavetable {
+    // Stores 2 * x[n] - x[n+1]
+    table1: Vec<f32>,
+    // Stores x[n + 1] - x[n]
+    table2: Vec<f32>,
+    // Masks the valid integral index bits
+    lomask: i32,
+}
 
-## Phase calculations
+/** Generates a signal from a Wavetable by sweeping a phase across the table and giving the value at each phase sample.
+
+The phase is tracked using a 32-bit, fixed-point value (signed to enable negative frequencies). Using a fixed-point value
+prevents the noise and modulation that floating point precision errors would introduce. The upshot of this is that the phase
+will change at a constant, predictable rate, but that the input frequencies and phase offsets (which are floating point) will
+be quantized (notice how both of these are cast to i32 values in Wavetable::perform()).
+
+# Phase calculations
 
 The phase is defined in units of the wavetable index, such that a phase of n.0 retrieves the nth wavetable value (see the
-[Linear interpolation](#lineaer-interpolation) section for more about this). It's represented with a signed, fixed-point
-value with 16 fractional bits.
+[`Wavetable`] documenation for more about this). It's represented with a signed, fixed-point value with 16 fractional bits.
 
-### Calculating the index from the phase
+## Calculating the index from the phase
 
 The wavetable index is the integral part of the phase value and is retrieved simply by right-shifting 16 bits. Then, we
 also need to perform a modulo operation to keep the index within the valid wavetable range. Because the table length is a
@@ -92,14 +99,14 @@ power of two, we can calculate the modulo of the phase simply by masking in the 
 wavetable, the mask will be `0xF`, which will mask out any values greater than 15. The efficiency of doing this, as
 opposed to using the more expensive `%` operator, is the reason that the table length must be a power of two.
 
-### Calculating the phase's fractional value
+## Calculating the phase's fractional value
 
 The method for getting the fractional value from the fixed-point phase is (I think) super cool. I've never used
 fixed-point values on a platform that supports floating point, so it's possible that this is a common technique and I've
 just never seen it before, but it's extremely efficient and requires no arithmetic operations (unless you count a shift
 and an `&`). This is encapsulated by the following code snippet:
 
-```
+```ignore
 #[repr(C)]
 union PhaseConv {
     iphase: i32,
@@ -123,16 +130,11 @@ representation, equals `1.m`, `m` being the phase's fractional component. If we 
 we would have to subtract the 1.0 from the value, but because of the way that the two tables were pre-calculated, this
 value can simply be multiplied by the value at index `n` of `table2`.
 */
-pub struct Wavetable {
-    // Stores 2 * x[n] - x[n+1]
-    table1: Vec<f32>,
-    // Stores x[n + 1] - x[n]
-    table2: Vec<f32>,
-
+pub struct Phasor<'a> {
+    // Wavetable reference
+    table: &'a Wavetable,
     // Fixed-point phase, with 16 fractional bits
     phase: i32,
-    // Masks the valid integral index bits
-    lomask: i32,
     // Converts radial phase values to table index increments
     radtoinc: f32,
     // Converts frequency (in cycles per second) to table index increments per output samples
@@ -141,25 +143,22 @@ pub struct Wavetable {
 }
 
 impl Wavetable {
-    /**
-    Creates a new Wavetable
+    /** Creates a new Wavetable
 
     # Arguments
 
     * `table`:     A slice that holds the values for the table. The length must be a power of two and no more than 2^17.
-    * `sampledur`: The sampling period (the inverse of the sample rate).
 
     # Examples
 
     ```
     # use wavetable::wt::Wavetable;
     // Create 44.1kHz wavetable that ramps from 0 to 128.
-    let sampledur = 1.0/44100.0;
     let table = Vec::from_iter((0..128).map(|v| -> f32 {v as f32}));
-    let mut wt = Wavetable::new(&table, sampledur);
+    let mut wt = Wavetable::new(&table);
     ```
     */
-    pub fn new(table: &[f32], sampledur: f32) -> Self {
+    pub fn new(table: &[f32]) -> Self {
         let size = table.len();
         assert_eq!(
             size & (size - 1),
@@ -172,17 +171,10 @@ impl Wavetable {
             "Phase computation is not precise for wavetables longer than (2**17)"
         );
 
-        let sizef32 = size as f32;
-
         let mut wt = Wavetable {
             table1: Vec::with_capacity(size),
             table2: Vec::with_capacity(size),
-            phase: 0,
-
-            // sampledur,
             lomask: (size - 1) as i32,
-            radtoinc: 65536.0 * sizef32 / (2.0 * PI),
-            cpstoinc: sizef32 * sampledur * 65536.0,
         };
 
         // Create the tables
@@ -199,8 +191,50 @@ impl Wavetable {
         wt
     }
 
-    /**
-    Performs the wavetable oscillation operation.
+    pub fn len(&self) -> usize {
+        self.table1.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /** Crates a new phasor for this wavetable
+
+    # Arguments
+
+    * `sampledur`: The sampling period (the inverse of the sample rate).
+    */
+    pub fn new_phasor(&self, sampledur: f32) -> Phasor {
+        Phasor::new(self, sampledur)
+    }
+
+    #[inline]
+    fn interpolate(&self, phase: i32) -> f32 {
+        let frac = phase_frac1(phase);
+        let index = ((phase >> XLOBITS1) & self.lomask) as usize;
+        self.table1[index] + (frac * self.table2[index])
+    }
+}
+
+const XLOBITS1: i32 = 16;
+
+impl<'a> Phasor<'a> {
+    fn new(table: &'a Wavetable, sampledur: f32) -> Self {
+        let size = table.len();
+        let sizef32 = size as f32;
+        //let phasor: Phasor<'a> =
+        Phasor {
+            table,
+            phase: 0,
+
+            // sampledur,
+            radtoinc: 65536.0 * sizef32 / (2.0 * PI),
+            cpstoinc: sizef32 * sampledur * 65536.0,
+        }
+    }
+
+    /** Performs the wavetable oscillation operation.
 
     # Arguments
 
@@ -215,16 +249,9 @@ impl Wavetable {
     pub fn perform(&mut self, outbuf: &mut [f32], freqin: &[f32], phasein: &[f32]) {
         for i in 0..outbuf.len() {
             let phaseoffset = self.phase + (self.radtoinc * phasein[i]) as i32;
-            outbuf[i] = self.interpolate(phaseoffset);
+            outbuf[i] = self.table.interpolate(phaseoffset);
             self.phase += (self.cpstoinc * freqin[i]) as i32;
         }
-    }
-
-    #[inline]
-    fn interpolate(&self, phase: i32) -> f32 {
-        let frac = phase_frac1(phase);
-        let index = ((phase >> XLOBITS1) & self.lomask) as usize;
-        self.table1[index] + (frac * self.table2[index])
     }
 }
 
@@ -254,18 +281,18 @@ mod tests {
     #[test]
     fn test_create_wavetable() {
         let table = generate_ramp(128);
-        let _wt = Wavetable::new(&table, 1.0 / 48000.0);
+        let _wt = Wavetable::new(&table);
     }
 
     #[test]
     #[should_panic(expected = "Wavetable size must be a power of two. Got 127")]
     fn test_create_wavetable_bad() {
         let table = generate_ramp(127);
-        let _wt = Wavetable::new(&table, 1.0 / 48000.0);
+        let _wt = Wavetable::new(&table);
     }
 
     #[test]
-    fn test_perform() {
+    fn test_phasor() {
         //! This will produce an output that rises steadily until it reaches 127 ,at the 1017th sample,
         //! and will then interpolate downward to zero at the 1025th sample.
 
@@ -273,12 +300,13 @@ mod tests {
         let table_len = 128;
 
         let table = generate_ramp(table_len);
-        let mut wt = Wavetable::new(&table, 1.0 / fs);
+        let wt = Wavetable::new(&table);
+        let mut phasor = wt.new_phasor(1.0 / fs);
 
         let freq = [1.0f32; 1025];
         let phase = [0.0f32; 1025];
         let mut outbuf = [0.0f32; 1025];
-        wt.perform(&mut outbuf, &freq, &phase);
+        phasor.perform(&mut outbuf, &freq, &phase);
 
         let samples_per_index = (fs as usize) / table_len;
 
@@ -286,6 +314,73 @@ mod tests {
         let rise_samples = (fs as usize) - samples_per_index;
 
         for (i, v) in outbuf.iter().enumerate() {
+            let expected = if i <= rise_samples {
+                (table_len * i) as f32 / fs
+            } else {
+                (table_len - 1) as f32
+                    * (1.0 - ((i - rise_samples) as f32) / (samples_per_index as f32))
+            };
+            assert!(
+                approx_eq!(f32, *v, expected, epsilon = 1e-3),
+                "out[{}] = {}, expected: {}, diff: {}",
+                i,
+                *v,
+                expected,
+                num::abs(*v - expected)
+            );
+        }
+    }
+
+    #[test]
+    fn test_dual_phasors() {
+        //! This will produce an output that rises steadily until it reaches 127 ,at the 1017th sample,
+        //! and will then interpolate downward to zero at the 1025th sample.
+
+        let fs = 1024.0;
+        let table_len = 128;
+
+        let table = generate_ramp(table_len);
+        let wt = Wavetable::new(&table);
+        let mut phasor1 = wt.new_phasor(1.0 / fs);
+        let mut phasor2 = wt.new_phasor(0.5 / fs); // The second phasor will run at twice the frequency
+
+        let freq = [1.0f32; 1025];
+        let phase = [0.0f32; 1025];
+        let mut outbuf1 = [0.0f32; 1025];
+        let mut outbuf2 = [0.0f32; 1025];
+
+        phasor1.perform(&mut outbuf1, &freq, &phase);
+        phasor2.perform(&mut outbuf2, &freq, &phase);
+
+        let samples_per_index = (fs as usize) / table_len;
+
+        // The output should rise until the index hits table_len - 1
+        let rise_samples = (fs as usize) - samples_per_index;
+
+        for (i, v) in outbuf1.iter().enumerate() {
+            let expected = if i <= rise_samples {
+                (table_len * i) as f32 / fs
+            } else {
+                (table_len - 1) as f32
+                    * (1.0 - ((i - rise_samples) as f32) / (samples_per_index as f32))
+            };
+            assert!(
+                approx_eq!(f32, *v, expected, epsilon = 1e-3),
+                "out[{}] = {}, expected: {}, diff: {}",
+                i,
+                *v,
+                expected,
+                num::abs(*v - expected)
+            );
+        }
+
+        let fs = 2.0 * fs;
+        let samples_per_index = (fs as usize) / table_len;
+
+        // The output should rise until the index hits table_len - 1
+        let rise_samples = (fs as usize) - samples_per_index;
+
+        for (i, v) in outbuf2.iter().enumerate() {
             let expected = if i <= rise_samples {
                 (table_len * i) as f32 / fs
             } else {
