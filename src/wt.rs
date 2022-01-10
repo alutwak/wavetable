@@ -1,5 +1,6 @@
 use super::system::get_samplerate;
 use std::f32::consts::PI;
+use std::num::Wrapping;
 
 /** An interpolating wavetable oscillator
 
@@ -135,7 +136,7 @@ pub struct Phasor<'a> {
     // Wavetable reference
     table: &'a Wavetable,
     // Fixed-point phase, with 16 fractional bits
-    phase: i32,
+    phase: Wrapping<i32>,
     // Converts radial phase values to table index increments
     radtoinc: f32,
     // Converts frequency (in cycles per second) to table index increments per output samples
@@ -229,7 +230,7 @@ impl<'a> Phasor<'a> {
         //let phasor: Phasor<'a> =
         Phasor {
             table,
-            phase: 0,
+            phase: Wrapping(0),
 
             // sampledur,
             radtoinc: 65536.0 * sizef32 / (2.0 * PI),
@@ -251,9 +252,9 @@ impl<'a> Phasor<'a> {
     */
     pub fn perform(&mut self, outbuf: &mut [f32], freqin: &[f32], phasein: &[f32]) {
         for i in 0..outbuf.len() {
-            let phaseoffset = self.phase + (self.radtoinc * phasein[i]) as i32;
-            outbuf[i] = self.table.interpolate(phaseoffset);
-            self.phase += (self.cpstoinc * freqin[i]) as i32;
+            let phaseoffset = self.phase + Wrapping((self.radtoinc * phasein[i]) as i32);
+            outbuf[i] = self.table.interpolate(phaseoffset.0);
+            self.phase += Wrapping((self.cpstoinc * freqin[i]) as i32);
         }
     }
 }
