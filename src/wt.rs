@@ -338,26 +338,34 @@ mod tests {
     }
 
     #[test]
-    fn test_dual_phasors() {
+    fn test_multi_phasors() {
         //! This will produce an output that rises steadily until it reaches 127 ,at the 1017th sample,
         //! and will then interpolate downward to zero at the 1025th sample.
 
         let fs = 1024.0;
         set_samplerate(fs);
         let table_len = 128;
+        let peak = (table_len - 1) as f32;
 
         let table = generate_ramp(table_len);
         let wt = Wavetable::new(&table);
-
-        let freq = [1.0f32; 1025];
-        let phase = [0.0f32; 1025];
         let mut phasor1 = wt.new_phasor();
         let mut phasor2 = wt.new_phasor(); // The second phasor will run with +pi phase
+        let mut phasor3 = wt.new_phasor(); // The 3d phasor will run at twice the frequency
+
+        let freq1 = [1.0f32; 1025];
+        let freq2 = [2.0f32; 1025];
+        let phase1 = [0.0f32; 1025];
+        let phase2 = [PI; 1025];
         let mut outbuf1 = [0.0f32; 1025];
         let mut outbuf2 = [0.0f32; 1025];
+        let mut outbuf3 = [0.0f32; 513];
 
-        phasor1.perform(&mut outbuf1, &freq, &phase);
-        phasor2.perform(&mut outbuf2, &freq, &phase);
+        phasor1.perform(&mut outbuf1, &freq1, &phase1);
+        phasor2.perform(&mut outbuf2, &freq1, &phase2);
+        phasor3.perform(&mut outbuf3, &freq2, &phase1);
+
+        // ----------------- Test phasor 1 -----------------------
 
         let samples_per_index = (fs as usize) / table_len;
 
@@ -366,10 +374,12 @@ mod tests {
 
         for (i, v) in outbuf1.iter().enumerate() {
             let expected = if i <= rise_samples {
-                (table_len * i) as f32 / fs
+                let slope = table_len as f32 / fs;
+                slope * i as f32
             } else {
-                (table_len - 1) as f32
-                    * (1.0 - ((i - rise_samples) as f32) / (samples_per_index as f32))
+                let slope = -peak / samples_per_index as f32;
+                let start = rise_samples;
+                peak + slope * ((i - start) as f32)
             };
             assert!(
                 approx_eq!(f32, *v, expected, epsilon = 1e-3),
@@ -381,18 +391,50 @@ mod tests {
             );
         }
 
-        let fs = 2.0 * fs;
+        // ----------------- Test phasor 2 -----------------------
+
+        let rise_samples = (fs as usize) / 2 - samples_per_index;
+
+        for (i, v) in outbuf2.iter().enumerate() {
+            let expected = if i <= rise_samples {
+                let slope = table_len as f32 / fs;
+                let start = (table_len / 2) as f32;
+                start + slope * i as f32
+            } else if i <= rise_samples + samples_per_index {
+                let slope = -peak / samples_per_index as f32;
+                let start = rise_samples;
+                peak + slope * ((i - start) as f32)
+            } else {
+                let slope = table_len as f32 / fs;
+                let start = rise_samples + samples_per_index;
+                slope * (i - start) as f32
+            };
+            assert!(
+                approx_eq!(f32, *v, expected, epsilon = 1e-3),
+                "out[{}] = {}, expected: {}, diff: {}",
+                i,
+                *v,
+                expected,
+                num::abs(*v - expected)
+            );
+        }
+
+        // ----------------- Test phasor 3 -----------------------
+
+        let fs = fs / 2.0; // Halving the sample rate is the same as doubling the phasor frequency
         let samples_per_index = (fs as usize) / table_len;
 
         // The output should rise until the index hits table_len - 1
         let rise_samples = (fs as usize) - samples_per_index;
 
-        for (i, v) in outbuf2.iter().enumerate() {
+        for (i, v) in outbuf3.iter().enumerate() {
             let expected = if i <= rise_samples {
-                (table_len * i) as f32 / fs
+                let slope = table_len as f32 / fs;
+                slope * i as f32
             } else {
-                (table_len - 1) as f32
-                    * (1.0 - ((i - rise_samples) as f32) / (samples_per_index as f32))
+                let slope = -peak / samples_per_index as f32;
+                let start = rise_samples;
+                peak + slope * ((i - start) as f32)
             };
             assert!(
                 approx_eq!(f32, *v, expected, epsilon = 1e-3),
