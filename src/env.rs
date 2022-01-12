@@ -1,4 +1,4 @@
-use super::system::get_samplerate;
+use super::system::System;
 use std::sync::{Arc, Mutex};
 
 pub type Gate = Arc<Mutex<f32>>;
@@ -15,6 +15,8 @@ remains upen. The release stage is triggered on the gate's falling edge (transit
 continue until either the envelope output reaches 0.0 or the gate opens again.
 */
 pub struct ASDR {
+    system: Arc<System>,
+
     // Length of the attack, in cps (cycles per second).
     att: u64,
     // Length of the decay, in cps.
@@ -44,15 +46,16 @@ impl ASDR {
     * `rel`: Release time (in seconds)
     * `gate`: The envelope's gate
     */
-    pub fn new(att: f32, dec: f32, sus: f32, rel: f32, gate: &Gate) -> Self {
-        let fs = get_samplerate();
+    pub fn new(system: &Arc<System>, att: f32, dec: f32, sus: f32, rel: f32, gate: &Gate) -> Self {
+        let fs = system.samplerate();
         ASDR {
+            system: system.clone(),
             att: (att * fs) as u64,
             dec: (dec * fs) as u64,
             sus,
             rel: (rel * fs) as u64,
 
-            gate: Arc::clone(gate),
+            gate: gate.clone(),
             prev_gate: *gate.lock().unwrap(),
 
             level: 0.0,
@@ -153,7 +156,9 @@ use crate::env::EnvStage::*;
 
 #[cfg(test)]
 mod tests {
-    use super::super::system::set_samplerate;
+    use crate::system::System;
+    use std::sync::Arc;
+
     use super::*;
     use float_cmp::approx_eq;
     use std::thread;
@@ -161,15 +166,16 @@ mod tests {
 
     #[test]
     fn test_create_asdr() {
+        let system = Arc::new(System::new(1.0, 1));
         let gate = create_gate(0.0);
-        let _asdr = ASDR::new(100.0, 100.0, 0.5, 100.0, &gate);
+        let _asdr = ASDR::new(&system, 100.0, 100.0, 0.5, 100.0, &gate);
     }
 
     #[test]
     fn test_asdr_off() {
-        set_samplerate(1.0); // Samplerate of 1 just makes the math easier
+        let system = Arc::new(System::new(1.0, 1));
         let gate = create_gate(0.0);
-        let mut asdr = ASDR::new(100.0, 100.0, 0.5, 100.0, &gate);
+        let mut asdr = ASDR::new(&system, 100.0, 100.0, 0.5, 100.0, &gate);
         let mut buffer = [0.0; 1000];
         asdr.perform(&mut buffer);
         for (i, val) in buffer.iter().enumerate() {
@@ -183,9 +189,11 @@ mod tests {
 
     #[test]
     fn test_asdr() {
-        set_samplerate(1.0);
         let gate = create_gate(0.0);
         let mut asdr = ASDR::new(128.0, 128.0, 0.5, 128.0, &gate);
+        let system = Arc::new(System::new(1.0, 1));
+        let gate = create_gate(0.0);
+        let mut asdr = ASDR::new(&system, 128.0, 128.0, 0.5, 128.0, &gate);
         let mut buffer = [0.0; 1000];
 
         // Open the gate
@@ -237,10 +245,10 @@ mod tests {
 
     #[test]
     fn test_asdr_thread() {
-        set_samplerate(1.0);
+        let system = Arc::new(System::new(1.0, 1));
         let gate = create_gate(0.0);
         let reader_gate = Arc::clone(&gate);
-        let mut asdr = ASDR::new(128.0, 128.0, 0.5, 128.0, &gate);
+        let mut asdr = ASDR::new(&system, 128.0, 128.0, 0.5, 128.0, &gate);
 
         let read_thread = thread::spawn(move || {
             let mut buffer = [0.0; 128];

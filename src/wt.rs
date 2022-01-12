@@ -1,6 +1,7 @@
-use super::system::get_samplerate;
+use super::system::System;
 use std::f32::consts::PI;
 use std::num::Wrapping;
+use std::sync::Arc;
 
 /** An interpolating wavetable oscillator
 
@@ -22,13 +23,14 @@ Note: The algorithms used for this implementation were based off of supercollide
 
 ```
 # use wavetable::wt::Wavetable;
-# use wavetable::system::set_samplerate;
-set_samplerate(44100.0);
+# use wavetable::system::System;
+# use std::sync::Arc;
+let system = Arc::new(System::new(44100.0, 1));
 // Create a wavetable that ramps from 0 to 128.
 let table = Vec::from_iter((0..128).map(|v| -> f32 {v as f32}));
 let wt = Wavetable::new(&table);
 
-let mut phasor = wt.new_phasor();
+let mut phasor = wt.new_phasor(&system);
 
 // Generate 1 second of a 440Hz waveform
 let freq = [440.0; 44100];
@@ -133,6 +135,7 @@ we would have to subtract the 1.0 from the value, but because of the way that th
 value can simply be multiplied by the value at index `n` of `table2`.
 */
 pub struct Phasor<'a> {
+    // system: Arc<System>,
     // Wavetable reference
     table: &'a Wavetable,
     // Fixed-point phase, with 16 fractional bits
@@ -207,8 +210,8 @@ impl Wavetable {
 
     * `sampledur`: The sampling period (the inverse of the sample rate).
     */
-    pub fn new_phasor(&self) -> Phasor {
-        Phasor::new(self)
+    pub fn new_phasor(&self, system: &Arc<System>) -> Phasor {
+        Phasor::new(system, self)
     }
 
     #[inline]
@@ -222,13 +225,13 @@ impl Wavetable {
 const XLOBITS1: i32 = 16;
 
 impl<'a> Phasor<'a> {
-    fn new(table: &'a Wavetable) -> Self {
-        let sampledur = 1.0 / get_samplerate();
+    fn new(system: &Arc<System>, table: &'a Wavetable) -> Self {
+        let sampledur = 1.0 / system.samplerate();
 
         let size = table.len();
         let sizef32 = size as f32;
-        //let phasor: Phasor<'a> =
         Phasor {
+            // system: system.clone(),
             table,
             phase: Wrapping(0),
 
@@ -275,10 +278,11 @@ fn phase_frac1(phase: i32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::super::system::set_samplerate;
+    use super::super::system::System;
     use super::Wavetable;
     use float_cmp::approx_eq;
     use std::f32::consts::PI;
+    use std::sync::Arc;
 
     fn generate_ramp(len: usize) -> Vec<f32> {
         Vec::from_iter((0..len).map(|v| -> f32 { v as f32 }))
@@ -302,12 +306,12 @@ mod tests {
         //! This will produce an output that rises steadily until it reaches 127 ,at the 1017th sample,
         //! and will then interpolate downward to zero at the 1025th sample.
         let fs = 1024.0;
-        set_samplerate(fs);
+        let system = Arc::new(System::new(1024.0, 1));
         let table_len = 128;
 
         let table = generate_ramp(table_len);
         let wt = Wavetable::new(&table);
-        let mut phasor = wt.new_phasor();
+        let mut phasor = wt.new_phasor(&system);
 
         let freq = [1.0f32; 1025];
         let phase = [0.0f32; 1025];
@@ -343,15 +347,15 @@ mod tests {
         //! and will then interpolate downward to zero at the 1025th sample.
 
         let fs = 1024.0;
-        set_samplerate(fs);
+        let system = Arc::new(System::new(1024.0, 1));
         let table_len = 128;
         let peak = (table_len - 1) as f32;
 
         let table = generate_ramp(table_len);
         let wt = Wavetable::new(&table);
-        let mut phasor1 = wt.new_phasor();
-        let mut phasor2 = wt.new_phasor(); // The second phasor will run with +pi phase
-        let mut phasor3 = wt.new_phasor(); // The 3d phasor will run at twice the frequency
+        let mut phasor1 = wt.new_phasor(&system);
+        let mut phasor2 = wt.new_phasor(&system); // The second phasor will run with +pi phase
+        let mut phasor3 = wt.new_phasor(&system); // The 3d phasor will run at twice the frequency
 
         let freq1 = [1.0f32; 1025];
         let freq2 = [2.0f32; 1025];
