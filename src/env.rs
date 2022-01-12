@@ -106,7 +106,7 @@ impl ASDR {
 
     * `outbuf`: A buffer for storing the output samples.
     */
-    pub fn perform(&mut self, outbuf: &mut [f32]) {
+    pub fn perform_audio(&mut self, outbuf: &mut [f32]) {
         for out in outbuf {
             if !(self.stage == Done || self.stage == Sus) {
                 self.counter -= 1;
@@ -115,6 +115,16 @@ impl ASDR {
             self.level += self.slope;
             *out = self.level;
         }
+    }
+
+    pub fn perform_control(&mut self) -> f32 {
+        let cr_div = self.system.controlrate_div();
+        if !(self.stage == Done || self.stage == Sus) {
+            self.counter -= std::cmp::min(self.counter, cr_div as u64);
+        }
+        self.check_stage();
+        self.level += self.slope * cr_div;
+        self.level
     }
 }
 
@@ -172,12 +182,12 @@ mod tests {
     }
 
     #[test]
-    fn test_asdr_off() {
+    fn test_asdr_off_audio() {
         let system = Arc::new(System::new(1.0, 1));
         let gate = create_gate(0.0);
         let mut asdr = ASDR::new(&system, 100.0, 100.0, 0.5, 100.0, &gate);
         let mut buffer = [0.0; 1000];
-        asdr.perform(&mut buffer);
+        asdr.perform_audio(&mut buffer);
         for (i, val) in buffer.iter().enumerate() {
             assert_eq!(
                 *val, 0.0,
@@ -188,9 +198,19 @@ mod tests {
     }
 
     #[test]
-    fn test_asdr() {
+    fn test_asdr_off_control() {
+        // Samplerate == ctrlrate just makes the math easier
+        let system = Arc::new(System::new(128.0, 128));
         let gate = create_gate(0.0);
-        let mut asdr = ASDR::new(128.0, 128.0, 0.5, 128.0, &gate);
+        let mut asdr = ASDR::new(&system, 100.0, 100.0, 0.5, 100.0, &gate);
+        for i in 0..1000 {
+            let env = asdr.perform_control();
+            assert_eq!(env, 0.0, "index {} of output was {}, expected 0.0", i, env);
+        }
+    }
+
+    #[test]
+    fn test_asdr_audio() {
         let system = Arc::new(System::new(1.0, 1));
         let gate = create_gate(0.0);
         let mut asdr = ASDR::new(&system, 128.0, 128.0, 0.5, 128.0, &gate);
@@ -200,7 +220,7 @@ mod tests {
         open_gate(&gate);
 
         // Test attack, decay and sustain
-        asdr.perform(&mut buffer);
+        asdr.perform_audio(&mut buffer);
         let mut expected = 0.0f32;
         for (i, val) in buffer.iter().enumerate() {
             expected = if i < 128 {
@@ -225,7 +245,7 @@ mod tests {
         close_gate(&gate);
 
         // Test release
-        asdr.perform(&mut buffer);
+        asdr.perform_audio(&mut buffer);
         for (i, val) in buffer.iter().enumerate() {
             expected = if i < 128 {
                 let step = -0.5 / 128.0;
@@ -244,7 +264,61 @@ mod tests {
     }
 
     #[test]
-    fn test_asdr_thread() {
+    fn test_asdr_control() {
+        let system = Arc::new(System::new(128.0, 128));
+        let gate = create_gate(0.0);
+        let mut asdr = ASDR::new(&system, 128.0, 128.0, 0.5, 128.0, &gate);
+
+        // Open the gate
+        open_gate(&gate);
+
+        // Test attack, decay and sustain
+        //asdr.perform_audio(&mut buffer);
+        let mut expected = 0.0f32;
+        for i in 0..1000 {
+            let val = asdr.perform_control();
+            expected = if i < 128 {
+                let step = 1.0 / 128.0;
+                expected + step
+            } else if i < 256 {
+                let step = -0.5 / 128.0;
+                expected + step
+            } else {
+                0.5
+            };
+            assert!(
+                approx_eq!(f32, val, expected, epsilon = 1e-3),
+                "ADS: index {} of output was {}, expected {}",
+                i,
+                val,
+                expected
+            );
+        }
+
+        // Close the gate
+        close_gate(&gate);
+
+        // Test release
+        for i in 0..1000 {
+            let val = asdr.perform_control();
+            expected = if i < 128 {
+                let step = -0.5 / 128.0;
+                expected + step
+            } else {
+                0.0
+            };
+            assert!(
+                approx_eq!(f32, val, expected, epsilon = 1e-3),
+                "Release: index {} of output was {}, expected {}",
+                i,
+                val,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_asdr_thread_audio() {
         let system = Arc::new(System::new(1.0, 1));
         let gate = create_gate(0.0);
         let reader_gate = Arc::clone(&gate);
@@ -256,7 +330,7 @@ mod tests {
             // Assert that the output stays at 0 until gate is opened
             println!("Reader: waiting for gate to open");
             while read_gate(&reader_gate) == 0.0 {
-                asdr.perform(&mut buffer);
+                asdr.perform_audio(&mut buffer);
                 for v in buffer.iter() {
                     assert!(
                         *v == 0.0 || read_gate(&reader_gate) > 0.0,
@@ -268,7 +342,7 @@ mod tests {
             // Assert that output doesn't return to 0 until gate is closed
             println!("Reader: gate opened! Waiting for gate to close.");
             while read_gate(&reader_gate) > 0.0 {
-                asdr.perform(&mut buffer);
+                asdr.perform_audio(&mut buffer);
                 for v in buffer.iter() {
                     assert!(
                         *v > 0.0 || read_gate(&reader_gate) <= 0.0,
@@ -279,7 +353,7 @@ mod tests {
 
             println!("Reader: gate closed! Checking release behavior.");
             // Read 128 samples, which is the length of the release
-            asdr.perform(&mut buffer);
+            asdr.perform_audio(&mut buffer);
             assert_eq!(
                 buffer[buffer.len() - 1],
                 0.0,
