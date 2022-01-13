@@ -33,10 +33,10 @@ let wt = Wavetable::new(&table);
 let mut phasor = wt.new_phasor(&system);
 
 // Generate 1 second of a 440Hz waveform
-let freq = [440.0; 44100];
-let phase = [0.0f32; 44100];
+let freq = 440.0;
+let phase = 0.0;
 let mut outbuf = [0.0f32; 1025];
-phasor.perform(&mut outbuf, &freq, &phase);
+phasor.perform(&mut outbuf, freq, phase);
 ```
 
 # Linear interpolation algorithm
@@ -241,7 +241,7 @@ impl<'a> Phasor<'a> {
         }
     }
 
-    /** Performs the wavetable oscillation operation.
+    /** Performs the wavetable oscillation operation with audio-rate frequency and/or phase modulation
 
     # Arguments
 
@@ -253,11 +253,31 @@ impl<'a> Phasor<'a> {
 
     This function will panic if either the `freqin` or `phasein` buffer lengths are shorter than the `outbuf` length.
     */
-    pub fn perform(&mut self, outbuf: &mut [f32], freqin: &[f32], phasein: &[f32]) {
+    pub fn perform_fm(&mut self, outbuf: &mut [f32], freqin: &[f32], phasein: &[f32]) {
         for i in 0..outbuf.len() {
             let phaseoffset = self.phase + Wrapping((self.radtoinc * phasein[i]) as i32);
             outbuf[i] = self.table.interpolate(phaseoffset.0);
             self.phase += Wrapping((self.cpstoinc * freqin[i]) as i32);
+        }
+    }
+
+    /** Performs the wavetable oscillation operation with control-rate frequency and/or phase modulation
+
+    # Arguments
+
+    * `outbuf`:  A buffer for storing the output waveform
+    * `freqin`:  The frequency (in Hz)
+    * `phasein`: The phase offset (in radians)
+
+    # Panics
+
+    This function will panic if either the `freqin` or `phasein` buffer lengths are shorter than the `outbuf` length.
+    */
+    pub fn perform(&mut self, outbuf: &mut [f32], freqin: f32, phasein: f32) {
+        for out in outbuf {
+            let phaseoffset = self.phase + Wrapping((self.radtoinc * phasein) as i32);
+            *out = self.table.interpolate(phaseoffset.0);
+            self.phase += Wrapping((self.cpstoinc * freqin) as i32);
         }
     }
 }
@@ -313,10 +333,10 @@ mod tests {
         let wt = Wavetable::new(&table);
         let mut phasor = wt.new_phasor(&system);
 
-        let freq = [1.0f32; 1025];
-        let phase = [0.0f32; 1025];
-        let mut outbuf = [0.0f32; 1025];
-        phasor.perform(&mut outbuf, &freq, &phase);
+        let freq = 1.0;
+        let phase = 0.0;
+        let mut outbuf = [0.0; 1025];
+        phasor.perform(&mut outbuf, freq, phase);
 
         let samples_per_index = (fs as usize) / table_len;
 
@@ -357,17 +377,13 @@ mod tests {
         let mut phasor2 = wt.new_phasor(&system); // The second phasor will run with +pi phase
         let mut phasor3 = wt.new_phasor(&system); // The 3d phasor will run at twice the frequency
 
-        let freq1 = [1.0f32; 1025];
-        let freq2 = [2.0f32; 1025];
-        let phase1 = [0.0f32; 1025];
-        let phase2 = [PI; 1025];
         let mut outbuf1 = [0.0f32; 1025];
         let mut outbuf2 = [0.0f32; 1025];
         let mut outbuf3 = [0.0f32; 513];
 
-        phasor1.perform(&mut outbuf1, &freq1, &phase1);
-        phasor2.perform(&mut outbuf2, &freq1, &phase2);
-        phasor3.perform(&mut outbuf3, &freq2, &phase1);
+        phasor1.perform(&mut outbuf1, 1.0, 0.0);
+        phasor2.perform(&mut outbuf2, 1.0, PI);
+        phasor3.perform(&mut outbuf3, 2.0, 0.0);
 
         // ----------------- Test phasor 1 -----------------------
 
