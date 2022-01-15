@@ -2,6 +2,8 @@ use super::system::System;
 use std::f32::consts::PI;
 use std::num::Wrapping;
 use std::sync::Arc;
+use std::ffi::{CString, CStr};
+use sndfile_sys::{SF_INFO, sf_open, sf_close, SFM_READ, sf_strerror, SNDFILE, sf_readf_float, sf_count_t};
 
 /** An interpolating wavetable oscillator
 
@@ -194,6 +196,53 @@ impl Wavetable {
         wt.table1.push(2.0 * val1 - val2);
         wt.table2.push(val2 - val1);
         wt
+    }
+
+    pub fn from_sndfile(path: &str) -> Result<Self, std::io::Error> {
+        let mut info = SF_INFO {
+            frames: 0,
+            samplerate: 0,
+            channels: 0,
+            format: 0,
+            sections: 0,
+            seekable: 0
+        };
+        let c_path = CString::new(path).unwrap();
+        let sf: *mut SNDFILE = unsafe { sf_open(c_path.as_ptr() as *mut _, SFM_READ, &mut info) };
+        if sf as usize == 0 {
+            let reason_pchar = unsafe { sf_strerror(sf) };
+            let reason = unsafe { CStr::from_ptr(reason_pchar).to_str().unwrap() };
+            return Err( std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Unable to open {}. Error: {}", path, reason))
+            );
+        }
+
+        let tablelen = (info.frames as f32).log2().floor().exp2() as usize;
+        let mut table = Vec::<f32>::with_capacity(tablelen * info.channels as usize);
+        let count = unsafe { sf_readf_float(sf, table.as_mut_ptr(), tablelen as sf_count_t) };
+        unsafe { sf_close(sf) };
+
+        if count as usize != tablelen {
+            return Err( std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Read fewer frames than expected. Expected {}, got {}", tablelen, count)
+            ));
+        }
+
+        // Tell table how many values it's holding
+        unsafe {table.set_len(tablelen * info.channels as usize) };
+
+        // Just keep the left channel by moving its samples to the front
+        if info.channels > 1 {
+            let chans = info.channels as usize;
+            for i in 1..tablelen {
+                table[i] = table[i * chans];
+            }
+            table.truncate(tablelen);
+        }
+
+        Ok(Wavetable::new(&table))
     }
 
     pub fn len(&self) -> usize {
@@ -465,5 +514,11 @@ mod tests {
                 num::abs(*v - expected)
             );
         }
+    }
+
+    #[test]
+    fn test_from_sndfile_len() {
+        let wt = Wavetable::from_sndfile("test/saw.wav").unwrap();
+        assert_eq!(wt.len(), 1024);
     }
 }
