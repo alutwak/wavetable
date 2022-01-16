@@ -1,5 +1,6 @@
 use super::system::System;
 use std::sync::{Arc, Mutex};
+use self::EnvStage::*;
 
 pub type Gate = Arc<Mutex<f32>>;
 
@@ -186,8 +187,6 @@ pub enum EnvStage {
     Rel,
     Done,
 }
-
-use crate::env::EnvStage::*;
 
 #[cfg(test)]
 mod tests {

@@ -3,7 +3,8 @@ use std::f32::consts::PI;
 use std::num::Wrapping;
 use std::sync::Arc;
 use std::ffi::{CString, CStr};
-use sndfile_sys::{SF_INFO, sf_open, sf_close, SFM_READ, sf_strerror, SNDFILE, sf_readf_float, sf_count_t};
+use sndfile_sys as sndfile;
+use sndfile_sys::{SF_INFO, SFM_READ, SNDFILE, sf_count_t};
 
 /** An interpolating wavetable oscillator
 
@@ -208,9 +209,9 @@ impl Wavetable {
             seekable: 0
         };
         let c_path = CString::new(path).unwrap();
-        let sf: *mut SNDFILE = unsafe { sf_open(c_path.as_ptr() as *mut _, SFM_READ, &mut info) };
+        let sf: *mut SNDFILE = unsafe { sndfile::sf_open(c_path.as_ptr() as *mut _, SFM_READ, &mut info) };
         if sf as usize == 0 {
-            let reason_pchar = unsafe { sf_strerror(sf) };
+            let reason_pchar = unsafe { sndfile::sf_strerror(sf) };
             let reason = unsafe { CStr::from_ptr(reason_pchar).to_str().unwrap() };
             return Err( std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -220,8 +221,8 @@ impl Wavetable {
 
         let tablelen = (info.frames as f32).log2().floor().exp2() as usize;
         let mut table = Vec::<f32>::with_capacity(tablelen * info.channels as usize);
-        let count = unsafe { sf_readf_float(sf, table.as_mut_ptr(), tablelen as sf_count_t) };
-        unsafe { sf_close(sf) };
+        let count = unsafe { sndfile::sf_readf_float(sf, table.as_mut_ptr(), tablelen as sf_count_t) };
+        unsafe { sndfile::sf_close(sf) };
 
         if count as usize != tablelen {
             return Err( std::io::Error::new(
