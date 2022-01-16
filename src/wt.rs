@@ -416,7 +416,7 @@ mod tests {
         //! and will then interpolate downward to zero at the 1025th sample.
 
         let fs = 1024.0;
-        let system = Arc::new(System::new(1024.0, 1));
+        let system = Arc::new(System::new(fs, 1));
         let table_len = 128;
         let peak = (table_len - 1) as f32;
 
@@ -517,8 +517,54 @@ mod tests {
     }
 
     #[test]
-    fn test_from_sndfile_len() {
+    fn test_from_sndfile() {
         let wt = Wavetable::from_sndfile("test/saw.wav").unwrap();
-        assert_eq!(wt.len(), 1024);
+        assert_eq!(wt.len(), 1024);  // saw.wav length is 1200 samples
+
+        let fs = 32768.0;
+        let system = Arc::new(System::new(fs, 1));
+        let mut phasor = wt.new_phasor(&system);
+
+        let freq = 1.0;
+        let phase = 0.0;
+        const BUFSIZE: usize = 1024;
+        let mut outbuf = [0.0; BUFSIZE];
+
+        let samp_len = fs / wt.len() as f32;
+        let fall_edge_end = 512.0 * samp_len;
+        let fall_edge_start = 511.0 * samp_len;
+
+        let saw_max = 0.9981079102;
+        let saw_min = -1.0;
+        let slope = saw_max / fall_edge_start;
+
+        let bufreads = (fs / BUFSIZE as f32).ceil() as usize;
+        for bf in 0..bufreads {
+            phasor.perform(&mut outbuf, freq, phase);
+            let ioffset = bf * BUFSIZE;
+            for (i, out) in outbuf.iter().enumerate() {
+                let sample = (i + ioffset) as f32;
+                if sample < fall_edge_start {
+                    let expected = sample * slope;
+                    assert!(
+                        approx_eq!(f32, *out, expected, epsilon = 1e-3),
+                        "out[{}] = {}, expected: {}", sample, *out, expected
+                    );
+                } else if sample < fall_edge_end {
+                    let expected = saw_max - ((saw_max - saw_min) / samp_len) * (sample - fall_edge_start);
+                    assert!(
+                        approx_eq!(f32, *out, expected, epsilon = 1e-3),
+                        "out[{}] = {}, expected: {}", sample, *out, expected
+                    );
+                } else {
+                    let expected = saw_min + slope * (sample - fall_edge_end);
+                    assert!(
+                        approx_eq!(f32, *out, expected, epsilon = 1e-3),
+                        "out[{}] = {}, expected: {}", sample, *out, expected
+                    );
+                };
+            }
+        }
     }
+
 }
