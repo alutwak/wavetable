@@ -200,14 +200,14 @@ mod tests {
 
     #[test]
     fn test_create_asdr() {
-        let system = Arc::new(System::new(1.0, 1));
+        let system = Arc::new(System::new(1.0, 1, 1024));
         let gate = create_gate(0.0);
         let _asdr = ASDR::new(&system, 100.0, 100.0, 0.5, 100.0, &gate);
     }
 
     #[test]
     fn test_asdr_off_audio() {
-        let system = Arc::new(System::new(1.0, 1));
+        let system = Arc::new(System::new(1.0, 1, 1000));
         let gate = create_gate(0.0);
         let mut asdr = ASDR::new(&system, 100.0, 100.0, 0.5, 100.0, &gate);
         let mut buffer = [1.0; 1000];
@@ -224,7 +224,7 @@ mod tests {
     #[test]
     fn test_asdr_off_control() {
         // Samplerate == ctrlrate just makes the math easier
-        let system = Arc::new(System::new(128.0, 128));
+        let system = Arc::new(System::new(128.0, 128, 1000));
         let gate = create_gate(0.0);
         let mut asdr = ASDR::new(&system, 100.0, 100.0, 0.5, 100.0, &gate);
         for i in 0..1000 {
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_asdr_audio() {
-        let system = Arc::new(System::new(1.0, 1));
+        let system = Arc::new(System::new(1.0, 1, 1000));
         let gate = create_gate(0.0);
         let mut asdr = ASDR::new(&system, 128.0, 128.0, 0.5, 128.0, &gate);
         let mut buffer = [1.0; 1000];
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn test_asdr_control() {
-        let system = Arc::new(System::new(128.0, 128));
+        let system = Arc::new(System::new(128.0, 128, 1000));
         let gate = create_gate(0.0);
         let mut asdr = ASDR::new(&system, 128.0, 128.0, 0.5, 128.0, &gate);
 
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn test_asdr_thread_audio() {
-        let system = Arc::new(System::new(1.0, 1));
+        let system = Arc::new(System::new(1.0, 1, 128));
         let gate = create_gate(0.0);
         let reader_gate = Arc::clone(&gate);
         let mut asdr = ASDR::new(&system, 128.0, 128.0, 0.5, 128.0, &gate);

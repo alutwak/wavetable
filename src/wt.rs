@@ -28,7 +28,7 @@ Note: The algorithms used for this implementation were based off of supercollide
 # use wavetable::wt::Wavetable;
 # use wavetable::system::System;
 # use std::sync::Arc;
-let system = Arc::new(System::new(44100.0, 1));
+let system = Arc::new(System::new(44100.0, 1, 1025));
 // Create a wavetable that ramps from 0 to 128.
 let table = Vec::from_iter((0..128).map(|v| -> f32 {v as f32}));
 let wt = Wavetable::new(&table);
@@ -376,7 +376,7 @@ mod tests {
         //! This will produce an output that rises steadily until it reaches 127 ,at the 1017th sample,
         //! and will then interpolate downward to zero at the 1025th sample.
         let fs = 1024.0;
-        let system = Arc::new(System::new(1024.0, 1));
+        let system = Arc::new(System::new(1024.0, 1, 1025));
         let table_len = 128;
 
         let table = generate_ramp(table_len);
@@ -417,7 +417,7 @@ mod tests {
         //! and will then interpolate downward to zero at the 1025th sample.
 
         let fs = 1024.0;
-        let system = Arc::new(System::new(fs, 1));
+        let system = Arc::new(System::new(fs, 1, 1025));
         let table_len = 128;
         let peak = (table_len - 1) as f32;
 
@@ -523,7 +523,7 @@ mod tests {
         assert_eq!(wt.len(), 1024);  // saw.wav length is 1200 samples
 
         let fs = 32768.0;
-        let system = Arc::new(System::new(fs, 1));
+        let system = Arc::new(System::new(fs, 1, 1024));
         let mut phasor = wt.new_phasor(&system);
 
         let freq = 1.0;

@@ -1,13 +1,15 @@
 pub struct System {
-    pub samplerate: f32,
-    pub controlrate_div: f32,
+    samplerate: f32,
+    controlrate_div: f32,
+    bufsize: usize,
 }
 
 impl System {
-    pub fn new(samplerate: f32, controlrate_div: u64) -> Self {
+    pub fn new(samplerate: f32, controlrate_div: u64, bufsize: usize) -> Self {
         System {
             samplerate,
             controlrate_div: controlrate_div as f32,
+            bufsize
         }
     }
 
@@ -17,5 +19,9 @@ impl System {
 
     pub fn controlrate_div(&self) -> f32 {
         self.controlrate_div
+    }
+
+    pub fn bufsize(&self) -> usize {
+        self.bufsize
     }
 }
