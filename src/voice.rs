@@ -45,12 +45,19 @@ impl<'a> Voice<'a> {
         envelope::write_gate(&self.gate, 0.0);
     }
 
-    pub fn perform(&mut self, outbuf: &mut [f32]) -> bool {
+    pub fn perform(&mut self, outbuf: &mut [f32]) {
         self.osc.perform(outbuf, self.pitch, 0.0);
         let envelope = self.envelope.perform_control();
         for out in outbuf {
             *out *= envelope * self.level;
         }
+    }
+
+    pub fn active(&mut self) -> bool {
         self.envelope.stage() != Done
+    }
+
+    pub fn pitch(&mut self) -> f32 {
+        self.pitch
     }
 }

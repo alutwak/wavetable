@@ -3,7 +3,10 @@ use portmidi::PortMidi;
 
 
 mod midi;
+mod instrument;
 use midi::{MidiError, Message};
+use instrument::Instrument;
+use wavetable::wt::Wavetable;
 
 fn main() -> Result<(), i32> {
 
@@ -64,6 +67,5 @@ fn main() -> Result<(), i32> {
 
 // struct Args {
 
-    
-// }
 
+// }
