@@ -1,4 +1,4 @@
-use super::envelope::EnvStage::Done;
+use super::envelope::EnvStage::*;
 use super::envelope;
 use super::envelope::{Gate, ASDR};
 use super::system::System;
@@ -38,10 +38,12 @@ impl Voice {
 
     pub fn note_on(&mut self, level: f32, pitch: f32) {
         self.pitch = pitch;
+        self.level = level;
         envelope::write_gate(&self.gate, level);
     }
 
     pub fn note_off(&mut self) {
+        self.level = 0.0;
         envelope::write_gate(&self.gate, 0.0);
     }
 
@@ -54,7 +56,7 @@ impl Voice {
     }
 
     pub fn active(&mut self) -> bool {
-        self.envelope.stage() != Done
+        envelope::read_gate(&self.gate) > 0.0 || self.envelope.stage() != Done
     }
 
     pub fn pitch(&mut self) -> f32 {
