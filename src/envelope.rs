@@ -149,7 +149,7 @@ impl ASDR {
             self.counter -= std::cmp::min(self.counter, cr_div as u64);
         }
         self.check_stage();
-        self.level += self.slope * cr_div;
+        self.level = (self.level + self.slope * cr_div).max(0.0);
         self.level
     }
 }
