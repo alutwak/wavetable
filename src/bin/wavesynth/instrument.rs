@@ -1,6 +1,8 @@
 use wavetable::wt::Wavetable;
 use wavetable::system::System;
 use wavetable::voice::Voice;
+use super::midi::Message;
+use super::midi;
 use std::sync::Arc;
 
 pub struct Instrument {
@@ -20,13 +22,16 @@ impl Instrument {
 
         for _ in 0..nvoices {
             inst.voices.push(
-                Voice::new(system, &table, att, dec, sus, rel)
+                Voice::new(system, table, att, dec, sus, rel)
             )
         }
         inst
     }
 
     pub fn perform(&mut self, outbuf: &mut [f32]) {
+        for out in outbuf.iter_mut() {
+            *out = 0.0;
+        }
         for voice in self.voices.iter_mut() {
             if voice.active() {
                 voice.perform(&mut self.buffer);
@@ -45,6 +50,7 @@ impl Instrument {
         for voice in self.voices.iter_mut() {
             if !voice.active() {
                 voice.note_on(level, pitch);
+                break;
             }
         }
     }
@@ -54,6 +60,25 @@ impl Instrument {
             if voice.active() && voice.pitch() == pitch {
                 voice.note_off();
             }
+        }
+    }
+
+    pub fn map_midi(&mut self, msg: &Message) {
+        match msg {
+            Message::NoteOff {chan: _, note, vel: _} => {
+                let pitch = midi::map_note_equal(note);
+                self.note_off(pitch);
+            }
+            Message::NoteOn {chan: _, note, vel} => {
+                let pitch = midi::map_note_equal(note);
+                if *vel == 0 {
+                    self.note_off(pitch);
+                } else {
+                    let level = midi::map_velocity(vel);
+                    self.note_on(level, pitch);
+                }
+            }
+            _ => {}
         }
     }
 
