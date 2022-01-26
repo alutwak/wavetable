@@ -7,19 +7,19 @@ use std::sync::Arc;
 
 type Envelope = ASDR;
 
-pub struct Voice<'a> {
+pub struct Voice {
     // system: Arc<System>,
-    osc: Phasor<'a>,
+    osc: Phasor,
     envelope: Envelope,
     level: f32,
     pitch: f32,
     gate: Gate,
 }
 
-impl<'a> Voice<'a> {
+impl Voice {
     pub fn new(
         system: &Arc<System>,
-        table: &'a Wavetable,
+        table: &Arc<Wavetable>,
         att: f32,
         dec: f32,
         sus: f32,
@@ -28,7 +28,7 @@ impl<'a> Voice<'a> {
         let gate = envelope::create_gate(0.0);
         Voice {
             // system: system.clone(),
-            osc: table.new_phasor(system),
+            osc: Phasor::new(system, table),
             envelope: Envelope::new(system, att, dec, sus, rel, &gate),
             level: envelope::read_gate(&gate),
             pitch: 0.0,

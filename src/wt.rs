@@ -25,15 +25,15 @@ Note: The algorithms used for this implementation were based off of supercollide
 # Examples
 
 ```
-# use wavetable::wt::Wavetable;
+# use wavetable::wt::{Wavetable, Phasor};
 # use wavetable::system::System;
 # use std::sync::Arc;
 let system = Arc::new(System::new(44100.0, 1, 1025));
 // Create a wavetable that ramps from 0 to 128.
 let table = Vec::from_iter((0..128).map(|v| -> f32 {v as f32}));
-let wt = Wavetable::new(&table);
+let wt = Arc::new(Wavetable::new(&table));
 
-let mut phasor = wt.new_phasor(&system);
+let mut phasor = Phasor::new(&system, &wt);
 
 // Generate 1 second of a 440Hz waveform
 let freq = 440.0;
@@ -137,10 +137,10 @@ representation, equals `1.m`, `m` being the phase's fractional component. If we 
 we would have to subtract the 1.0 from the value, but because of the way that the two tables were pre-calculated, this
 value can simply be multiplied by the value at index `n` of `table2`.
 */
-pub struct Phasor<'a> {
+pub struct Phasor {
     // system: Arc<System>,
     // Wavetable reference
-    table: &'a Wavetable,
+    table: Arc<Wavetable>,
     // Fixed-point phase, with 16 fractional bits
     phase: Wrapping<i32>,
     // Converts radial phase values to table index increments
@@ -215,7 +215,7 @@ impl Wavetable {
             let reason = unsafe { CStr::from_ptr(reason_pchar).to_str().unwrap() };
             return Err( std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Unable to open {}. Error: {}", path, reason))
+                format!("Unable to open {}. {}", path, reason))
             );
         }
 
@@ -254,15 +254,15 @@ impl Wavetable {
         self.len() == 0
     }
 
-    /** Crates a new phasor for this wavetable
+    // /** Crates a new phasor for this wavetable
 
-    # Arguments
+    // # Arguments
 
-    * `sampledur`: The sampling period (the inverse of the sample rate).
-    */
-    pub fn new_phasor(&self, system: &Arc<System>) -> Phasor {
-        Phasor::new(system, self)
-    }
+    // * `sampledur`: The sampling period (the inverse of the sample rate).
+    // */
+    // pub fn new_phasor(&self, system: &Arc<System>) -> Phasor {
+    //     Phasor::new(system, self)
+    // }
 
     #[inline]
     fn interpolate(&self, phase: i32) -> f32 {
@@ -274,15 +274,16 @@ impl Wavetable {
 
 const XLOBITS1: i32 = 16;
 
-impl<'a> Phasor<'a> {
-    fn new(system: &Arc<System>, table: &'a Wavetable) -> Self {
+impl Phasor {
+
+    pub fn new(system: &Arc<System>, table: &Arc<Wavetable>) -> Self {
         let sampledur = 1.0 / system.samplerate();
 
         let size = table.len();
         let sizef32 = size as f32;
         Phasor {
             // system: system.clone(),
-            table,
+            table: table.clone(),
             phase: Wrapping(0),
 
             // sampledur,
@@ -349,7 +350,7 @@ fn phase_frac1(phase: i32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::super::system::System;
-    use super::Wavetable;
+    use super::{Wavetable, Phasor};
     use float_cmp::approx_eq;
     use std::f32::consts::PI;
     use std::sync::Arc;
@@ -380,8 +381,8 @@ mod tests {
         let table_len = 128;
 
         let table = generate_ramp(table_len);
-        let wt = Wavetable::new(&table);
-        let mut phasor = wt.new_phasor(&system);
+        let wt = Arc::new(Wavetable::new(&table));
+        let mut phasor = Phasor::new(&system, &wt);
 
         let freq = 1.0;
         let phase = 0.0;
@@ -422,10 +423,10 @@ mod tests {
         let peak = (table_len - 1) as f32;
 
         let table = generate_ramp(table_len);
-        let wt = Wavetable::new(&table);
-        let mut phasor1 = wt.new_phasor(&system);
-        let mut phasor2 = wt.new_phasor(&system); // The second phasor will run with +pi phase
-        let mut phasor3 = wt.new_phasor(&system); // The 3d phasor will run at twice the frequency
+        let wt = Arc::new(Wavetable::new(&table));
+        let mut phasor1 = Phasor::new(&system, &wt);
+        let mut phasor2 = Phasor::new(&system, &wt); // The second phasor will run with +pi phase
+        let mut phasor3 = Phasor::new(&system, &wt); // The 3d phasor will run at twice the frequency
 
         let mut outbuf1 = [0.0f32; 1025];
         let mut outbuf2 = [0.0f32; 1025];
@@ -521,10 +522,11 @@ mod tests {
     fn test_from_sndfile() {
         let wt = Wavetable::from_sndfile("test/saw.wav").unwrap();
         assert_eq!(wt.len(), 1024);  // saw.wav length is 1200 samples
+        let wt = Arc::new(wt);
 
         let fs = 32768.0;
         let system = Arc::new(System::new(fs, 1, 1024));
-        let mut phasor = wt.new_phasor(&system);
+        let mut phasor = Phasor::new(&system, &wt);
 
         let freq = 1.0;
         let phase = 0.0;

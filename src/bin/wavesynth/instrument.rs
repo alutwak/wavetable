@@ -3,24 +3,24 @@ use wavetable::system::System;
 use wavetable::voice::Voice;
 use std::sync::Arc;
 
-pub struct Instrument<'a> {
-    table: &'a Wavetable,
-    voices: Vec<Voice<'a>>,
+pub struct Instrument {
+    //table: Wavetable,
+    voices: Vec<Voice>,
     buffer: Vec<f32>
 }
 
-impl<'a> Instrument<'a> {
+impl Instrument {
 
-    pub fn new(system: &Arc<System>, table: &'a Wavetable, nvoices: usize, att: f32, dec: f32, sus: f32, rel: f32) -> Self {
+    pub fn new(system: &Arc<System>, table: &Arc<Wavetable>, nvoices: usize, att: f32, dec: f32, sus: f32, rel: f32) -> Self {
         let mut inst = Instrument {
-            table,
+            //table,
             voices: Vec::new(),
             buffer: vec![0f32; system.bufsize()],
         };
 
         for _ in 0..nvoices {
             inst.voices.push(
-                Voice::new(system, table, att, dec, sus, rel)
+                Voice::new(system, &table, att, dec, sus, rel)
             )
         }
         inst
