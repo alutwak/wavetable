@@ -61,16 +61,19 @@ operations can make a real difference.
 ## Why use two tables?
 
 The Wavetable class uses two tables under the hood in order to eliminate a few of these operations during
-operation. Instead of directly storing the table values, each table stores a pre-calculated portion of the interpolation
+runtime. Instead of directly storing the table values, each table stores a pre-calculated portion of the interpolation
 calculation, saving us a subtraction, a register copy (or an index operation), and a floating point subtraction in the
 calculation of 0.m (essentially, we get to calculate 1.m instead, which turns out to be cheaper). In exchange, we double
 the memory footprint of the wavetable (which can't be more than 130kB extra). Here's a quick rundown of the table
-equations (where `m` is the fractional part of the phase):
+equations (where `m` is the fractional part of the phase, `val1` is `table[n]` and `val2` is `table[n+1]` and `tbl1/2` are
+the pre-conditioned tables that Wavetable stores):
 
 ```ignore
+// Table preconditioning
 tbl1 = (2 * val1) - val2
 tbl2 = val2 - val1
 
+// Interpolated output calculation
 out = tbl1 + (tbl2 * (1 + m))
     = (2 * val1) - val2 + ((val2 - val1) * (1 + m))
     = 2a - b + (b - a) + (b - a) * m
@@ -254,16 +257,6 @@ impl Wavetable {
         self.len() == 0
     }
 
-    // /** Crates a new phasor for this wavetable
-
-    // # Arguments
-
-    // * `sampledur`: The sampling period (the inverse of the sample rate).
-    // */
-    // pub fn new_phasor(&self, system: &Arc<System>) -> Phasor {
-    //     Phasor::new(system, self)
-    // }
-
     #[inline]
     fn interpolate(&self, phase: i32) -> f32 {
         let frac = phase_frac1(phase);
@@ -276,6 +269,15 @@ const XLOBITS1: i32 = 16;
 
 impl Phasor {
 
+    /** Creates a new phasor for the given Wavetable
+    
+    # Arguments
+    * `system`: The System parameters
+    * `table`:  The wavetable to reference
+    
+    # Returns
+    A Phasor that will generate signals from the given Wavetable.
+    */
     pub fn new(system: &Arc<System>, table: &Arc<Wavetable>) -> Self {
         let sampledur = 1.0 / system.samplerate();
 

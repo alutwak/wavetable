@@ -2,6 +2,11 @@ use super::system::System;
 use std::sync::{Arc, Mutex};
 use self::EnvStage::*;
 
+/** A thread-safe gate signal that controls when the envelope starts the attack and release stages
+
+The envelope will start the attack phase when the gate rises above 0, and it will start the release phase when the gate drops
+back to 0 (or below). The floating point value allows the gate to also carry the note velocity information.
+*/
 pub type Gate = Arc<Mutex<f32>>;
 
 /** An ASDR envelope with linear stages
@@ -9,11 +14,14 @@ pub type Gate = Arc<Mutex<f32>>;
 The envelope works on a range of [0, 1], so the peak amplitude will need to be adjusted by multiplying its output. This may
 be adjusted in the future to increase efficiency.
 
-The envelope is triggered by a gate, which is represented by an f32 Mutex. When the gate is considered to be open when its
+The envelope is triggered by a gate, which is represented by an f32 Mutex. The gate is considered to be open when its
 value is >= 0.0 and otherwise it's considered to be closed. The envelope sequence begins at the gate's rising edge
 (transitioning from closed to open), and it will continue through the attack, decay and sustain stages as long as the gate
 remains upen. The release stage is triggered on the gate's falling edge (transitioning from open to close) and will
 continue until either the envelope output reaches 0.0 or the gate opens again.
+
+# TODO:
+* Check that the parameter values are in the correct ranges when constructing or setting parameters
 */
 pub struct ASDR {
     system: Arc<System>,
@@ -66,31 +74,43 @@ impl ASDR {
         }
     }
 
+    /** Sets the attack time
+     */
     #[inline]
     pub fn set_att(&mut self, att: f32) {
         self.att = (att * self.system.samplerate()) as u64;
     }
 
+    /** Sets the decay time
+     */
     #[inline]
     pub fn set_dec(&mut self, dec: f32) {
         self.dec = (dec * self.system.samplerate()) as u64;
     }
 
+    /** Sets the sustain level
+     */
     #[inline]
     pub fn set_sus(&mut self, sus: f32) {
         self.sus = sus;
     }
 
+    /** Sets the release time
+     */
     #[inline]
     pub fn set_rel(&mut self, rel: f32) {
         self.rel = (rel * self.system.samplerate()) as u64;
     }
 
+    /** Returns the current stage of the envelope
+     */
     #[inline]
     pub fn stage(&mut self) -> EnvStage {
         self.stage
     }
 
+    /* Checks the stage and advances to the next one when it's time
+     */
     #[inline]
     fn check_stage(&mut self) {
         let g = *self.gate.lock().unwrap();
@@ -124,9 +144,11 @@ impl ASDR {
         }
     }
 
-    /** Performs the envelope operation.
+    /** Performs the envelope operation at the audio rate.
 
-    Calculates the next output.len() samples and multiplies the values in output by these values
+    Calculates the next output.len() samples and multiplies the values in output by these values. Doing it this way allows the
+    multiplication calculation to occur without requiring an extra buffer, but it does require that the raw signal value be
+    calculated before the envelope is applied.
 
     # Arguments
 
@@ -143,6 +165,11 @@ impl ASDR {
         }
     }
 
+    /** Performs the envelope operation at the control rate.
+
+    # Returns
+    The next level of the envelope
+    */
     pub fn perform_control(&mut self) -> f32 {
         let cr_div = self.system.controlrate_div();
         if !(self.stage == Done || self.stage == Sus) {
@@ -154,37 +181,54 @@ impl ASDR {
     }
 }
 
+/** A utility function to create a Gate
+*/
 #[inline]
 pub fn create_gate(val: f32) -> Gate {
     Arc::new(Mutex::new(val))
 }
 
+/** A utility function to read the gate value
+*/
 #[inline]
 pub fn read_gate(gate: &Gate) -> f32 {
     *gate.lock().unwrap()
 }
 
+/** A utility function to write a value to the gate
+*/
 #[inline]
 pub fn write_gate(gate: &Gate, val: f32) {
     *gate.lock().unwrap() = val;
 }
 
+/** Opens the given gate by setting its value to 1
+*/
 #[inline]
 pub fn open_gate(gate: &Gate) {
     write_gate(gate, 1.0);
 }
 
+/** Closes the given gate by setting its value to 0
+*/
 #[inline]
 pub fn close_gate(gate: &Gate) {
     write_gate(gate, 0.0);
 }
 
+/** Defines the envelope stages
+*/
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EnvStage {
+    /// Attack
     Att,
+    /// Decay
     Dec,
+    /// Sustain
     Sus,
+    /// Release
     Rel,
+    /// Done (the envelope is not currently operating)
     Done,
 }
 
