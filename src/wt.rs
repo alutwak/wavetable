@@ -312,6 +312,14 @@ impl Phasor {
         }
     }
 
+    /** Sets the phase to zero
+     *
+     * This is useful to ensure that a new note starts on a zero-crossing (assuming that the table starts at 0)
+     */
+    pub fn zero(&mut self) {
+        self.phase = Wrapping(0);
+    }
+
     /** Performs the wavetable oscillation operation with control-rate frequency and/or phase modulation
 
     # Arguments

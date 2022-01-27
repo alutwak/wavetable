@@ -39,6 +39,7 @@ impl Voice {
     pub fn note_on(&mut self, level: f32, pitch: f32) {
         self.pitch = pitch;
         self.level = level;
+        self.osc.zero();
         envelope::write_gate(&self.gate, level);
     }
 
