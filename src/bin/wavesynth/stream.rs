@@ -43,6 +43,8 @@ pub fn get_config(system: &Arc<System>, device: &Device) -> Option<StreamConfig>
             if bufsize < *min || bufsize > *max {
                 continue;
             }
+        } else {
+            continue;
         }
 
         if range.sample_format() != cpal::SampleFormat::F32 {
@@ -51,6 +53,7 @@ pub fn get_config(system: &Arc<System>, device: &Device) -> Option<StreamConfig>
 
         let mut config = range.with_sample_rate(cpal::SampleRate(fs)).config();
         config.buffer_size = cpal::BufferSize::Fixed(bufsize);
+        config.channels = 1;
         return Some(config);
     }
 

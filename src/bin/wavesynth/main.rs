@@ -64,7 +64,12 @@ fn main() -> Result<(), i32> {
         }
     };
 
-    let _stream = stream::make_stream(&system, perform);
+    let _stream = stream::make_stream(&system, perform).map_err(
+        |e| {
+            eprintln!("Failed to create output stream: {}", e);
+            1
+        }
+    )?;
 
     loop {
         if let Some(event) = mididev.read().unwrap() {
