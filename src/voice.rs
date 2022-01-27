@@ -43,7 +43,6 @@ impl Voice {
     }
 
     pub fn note_off(&mut self) {
-        self.level = 0.0;
         envelope::write_gate(&self.gate, 0.0);
     }
 
