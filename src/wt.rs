@@ -237,11 +237,15 @@ impl Wavetable {
         // Tell table how many values it's holding
         unsafe {table.set_len(tablelen * info.channels as usize) };
 
-        // Just keep the left channel by moving its samples to the front
+        // Mix all channels down to a single channel by averaging them
         if info.channels > 1 {
             let chans = info.channels as usize;
-            for i in 1..tablelen {
-                table[i] = table[i * chans];
+            for i in 0..tablelen {
+                let mut mixed = 0.0f32;
+                for c in 0..chans {
+                    mixed += table[(i * chans) + c] / (chans as f32);
+                }
+                table[i] = mixed;
             }
             table.truncate(tablelen);
         }
