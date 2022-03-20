@@ -200,9 +200,24 @@ impl Wavetable {
         wt
     }
 
-    pub fn from_sndfile(path: &str) -> Result<Self, std::io::Error> {
-        let (table, _) = utils::read_sndfile(path)?;
-        Ok(Wavetable::new(&table))
+    pub fn from_sndfile(path: &str, trim: bool) -> Result<Self, std::io::Error> {
+        let (mut table, _) = utils::read_sndfile(path)?;
+        if trim {
+            table = utils::best_waveform(&table).ok_or_else(|| std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to find acceptable waveform in {}", path)
+                ))?.to_vec();
+        }
+
+        let final_len = utils::next_pow_of_2(table.len());
+
+        if final_len == table.len() {
+            Ok(Wavetable::new(&table))
+        } else {
+            Ok(Wavetable::new(
+                &utils::resample(&table, final_len, true)
+            ))
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -486,8 +501,8 @@ mod tests {
 
     #[test]
     fn test_from_sndfile() {
-        let wt = Wavetable::from_sndfile("test/saw.wav").unwrap();
-        assert_eq!(wt.len(), 1024);  // saw.wav length is 1200 samples
+        let wt = Wavetable::from_sndfile("test/saw.wav", false).unwrap();
+        assert_eq!(wt.len(), 1024);  // saw.wav length is 1024 samples
         let wt = Arc::new(wt);
 
         let fs = 32768.0;
@@ -534,6 +549,12 @@ mod tests {
                 };
             }
         }
+    }
+
+    #[test]
+    fn test_from_sndfile_trim() {
+        let wt = Wavetable::from_sndfile("test/LongVoice.wav", true).unwrap();
+        assert_eq!(wt.len(), 512);  // LongVoice.wav fundamental is 469 samps long, which rounds up to 512 samples
     }
 
 }

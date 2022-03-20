@@ -22,7 +22,7 @@ fn main() -> Result<(), i32> {
 
     let system = Arc::new(System::new(args.samplerate as f32, args.bufsize as u64, args.bufsize));
 
-    let table = Wavetable::from_sndfile(&args.wavetable).map_err(
+    let table = Wavetable::from_sndfile(&args.wavetable, false).map_err(
         |e| {
             println!("{}", e);
             1
