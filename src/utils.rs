@@ -1,6 +1,6 @@
 use rustfft::{FftPlanner, num_complex::Complex};
 use std::cmp::Ordering::Equal;
-
+use num::FromPrimitive;
 use std::ffi::{CString, CStr};
 use sndfile_sys as sndfile;
 use sndfile_sys::{SF_INFO, SFM_READ, SNDFILE, sf_count_t};
@@ -177,10 +177,60 @@ pub fn best_waveform(buffer: &[f32]) -> Option<&[f32]> {
     }
 }
 
+/** Performs a linear interpolation on a range of [0:1]
+*/
+pub fn linear_interp(x: f32, y0: f32, y1: f32) -> f32 {
+    y0 + x * (y1 - y0)
+}
+
+/** Resamples a buffer, stretching the time so that the returned buffer has the given length
+
+The interpolation at the end of the resampled signal can either wrap back around to the beginning of the
+input buffer, or it can hold the final value. Wrapping the signal will usually be more useful for wavetables,
+but may be inappropriate for envelopes or other non-cycling signals.
+*/
+pub fn resample(buffer: &[f32], len: usize, wrap: bool) -> Vec<f32> {
+    let t_resamp = (buffer.len() as f32) / (len as f32);
+    let inlen = buffer.len();
+    Vec::from_iter((0..len).map(|i| -> f32 {
+        let phase = (i as f32) * t_resamp;
+        let iphase0 = phase.floor() as usize;
+        let iphase1 = iphase0 + 1;
+        let frac = phase - iphase0 as f32;
+
+        let d0: f32;
+        let d1: f32;
+        if wrap {
+            d0 = buffer[iphase0];
+            d1 = buffer[iphase1 % inlen];
+        } else {
+            d0 = buffer[iphase0];
+            if iphase1 > inlen - 1 {
+                d1 = buffer[iphase0]; // Hold the last value
+            } else {
+                d1 = buffer[iphase1];
+            }
+        }
+
+        linear_interp(frac, d0, d1)
+    }))
+}
+
+/** Returns the next power of two that is greater than or equal to x
+*/
+pub fn next_pow_of_2<T>(x: T) -> T
+where T: std::ops::Add<Output = T> + num::FromPrimitive + num::ToPrimitive
+{
+    let xf64 = x.to_f64().unwrap();
+    let next_p2 = 2f64.powf(
+        xf64.log2().ceil()
+    );
+    FromPrimitive::from_f64(next_p2).unwrap()
+}
 
 #[cfg(test)]
 mod tests {
-    use super::{frequency_peaks, read_sndfile, best_waveform, signal_energy};
+    use super::{frequency_peaks, read_sndfile, best_waveform, signal_energy, resample};
     use rand::{thread_rng, Rng};
     use float_cmp::approx_eq;
 
@@ -311,4 +361,49 @@ mod tests {
         let wf = best_waveform(&signal);
         assert!(wf.is_none(), "Incorrectly captured a waveform from noise");
     }
+
+    #[test]
+    fn test_resample_long() {
+        let inlen = 44100;
+        let outlen = 48000;
+        let infreq = 441.0 / inlen as f32;
+        let outfreq = (infreq * inlen as f32) / outlen as f32;
+
+        let signal = generate_triangle(inlen, infreq);
+        let resamp = resample(&signal, outlen, true);
+
+        assert!(resamp.len() == outlen);
+
+        let control = generate_triangle(outlen, outfreq);
+        for (i, (ctl, tst)) in control.iter().zip(resamp.iter()).enumerate() {
+            assert!(
+                approx_eq!(f32, *ctl, *tst, epsilon=1e-3)  ,
+                "Expected sample {} value: {}. Got {}", i, ctl, tst
+            );
+        }
+
+    }
+
+    #[test]
+    fn test_resample_short() {
+        let inlen = 48000;
+        let outlen = 44100;
+        let infreq = 480.0 / inlen as f32;
+        let outfreq = (infreq * inlen as f32) / outlen as f32;
+
+        let signal = generate_triangle(inlen, infreq);
+        let resamp = resample(&signal, outlen, true);
+
+        assert!(resamp.len() == outlen);
+
+        let control = generate_triangle(outlen, outfreq);
+        for (i, (ctl, tst)) in control.iter().zip(resamp.iter()).enumerate() {
+            assert!(
+                approx_eq!(f32, *ctl, *tst, epsilon=1e-3)  ,
+                "Expected sample {} value: {}. Got {}", i, ctl, tst
+            );
+        }
+
+    }
+
 }
