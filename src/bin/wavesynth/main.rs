@@ -1,26 +1,29 @@
-use std::sync::Arc;
 use std::sync::mpsc::channel;
+use std::sync::Arc;
 
-use portmidi::PortMidi;
 use clap::Parser;
+use portmidi::PortMidi;
 
-mod midi;
 mod instrument;
+mod midi;
 mod stream;
-use midi::{MidiError, Message};
 use instrument::Instrument;
+use midi::{Message, MidiError};
 use wavetable::system::System;
 use wavetable::wt::Wavetable;
 
 fn main() -> Result<(), i32> {
-
     let args = Args::parse();
 
     if let Some(midi_device) = args.midi_device.as_deref() {
         println!("MIDI Device: {}", midi_device);
     }
 
-    let system = Arc::new(System::new(args.samplerate as f32, args.bufsize as u64, args.bufsize));
+    let system = Arc::new(System::new(
+        args.samplerate as f32,
+        args.bufsize as u64,
+        args.bufsize,
+    ));
 
     let table = Wavetable::from_sndfile(&args.wavetable, false).map_err(
         |e| {
@@ -30,22 +33,27 @@ fn main() -> Result<(), i32> {
 
     let table = Arc::new(table);
 
-    let mut instrument =  Instrument::new(
+    let mut instrument = Instrument::new(
         &system,
         &table,
         args.voices,
-        args.attack/1000.0,
-        args.decay/1000.0,
+        args.attack / 1000.0,
+        args.decay / 1000.0,
         args.sustain,
-        args.release/1000.0);
+        args.release / 1000.0,
+    );
 
     // Create Midi Device
     let pm = PortMidi::new().unwrap();
     let midi_dev_result = midi::get_midi_device(&pm);
     if let Err(err) = midi_dev_result {
         match err {
-            MidiError::Cancelled => {return Ok(());}
-            MidiError::DevNotFound => {return Err(1);}
+            MidiError::Cancelled => {
+                return Ok(());
+            }
+            MidiError::DevNotFound => {
+                return Err(1);
+            }
             MidiError::PortMidiError(reason) => {
                 println!("Encountered portmidi error: {}", reason);
                 return Err(1);
@@ -64,24 +72,22 @@ fn main() -> Result<(), i32> {
         }
     };
 
-    let _stream = stream::make_stream(&system, perform).map_err(
-        |e| {
-            eprintln!("Failed to create output stream: {}", e);
-            1
-        }
-    )?;
+    let _stream = stream::make_stream(&system, perform).map_err(|e| {
+        eprintln!("Failed to create output stream: {}", e);
+        1
+    })?;
 
     loop {
         if let Some(event) = mididev.read().unwrap() {
             let msg = midi::map_message(&event.message);
             match msg {
-                Message::NoteOff {chan, note, vel} => {
+                Message::NoteOff { chan, note, vel } => {
                     println!("NoteOff: chan({}), note({}), vel({})", chan, note, vel);
                 }
-                Message::NoteOn {chan, note, vel} => {
+                Message::NoteOn { chan, note, vel } => {
                     println!("NoteOn: chan({}), note({}), vel({})", chan, note, vel);
                 }
-                _ => continue
+                _ => continue,
             }
             tx.send(msg).unwrap();
         }
@@ -92,7 +98,6 @@ fn main() -> Result<(), i32> {
 #[clap(version = "wavesynth 0.1.0", long_about = None)]
 #[clap(about = "A MIDI-controlled wavetable synthesizer")]
 struct Args {
-
     /// Path to an audio file to use for a wavetable
     wavetable: String,
 

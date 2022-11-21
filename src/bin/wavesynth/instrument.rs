@@ -1,19 +1,26 @@
-use wavetable::wt::Wavetable;
+use super::midi;
+use super::midi::Message;
+use std::sync::Arc;
 use wavetable::system::System;
 use wavetable::voice::Voice;
-use super::midi::Message;
-use super::midi;
-use std::sync::Arc;
+use wavetable::wt::Wavetable;
 
 pub struct Instrument {
     //table: Wavetable,
     voices: Vec<Voice>,
-    buffer: Vec<f32>
+    buffer: Vec<f32>,
 }
 
 impl Instrument {
-
-    pub fn new(system: &Arc<System>, table: &Arc<Wavetable>, nvoices: usize, att: f32, dec: f32, sus: f32, rel: f32) -> Self {
+    pub fn new(
+        system: &Arc<System>,
+        table: &Arc<Wavetable>,
+        nvoices: usize,
+        att: f32,
+        dec: f32,
+        sus: f32,
+        rel: f32,
+    ) -> Self {
         let mut inst = Instrument {
             //table,
             voices: Vec::new(),
@@ -21,9 +28,8 @@ impl Instrument {
         };
 
         for _ in 0..nvoices {
-            inst.voices.push(
-                Voice::new(system, table, att, dec, sus, rel)
-            )
+            inst.voices
+                .push(Voice::new(system, table, att, dec, sus, rel))
         }
         inst
     }
@@ -65,11 +71,15 @@ impl Instrument {
 
     pub fn map_midi(&mut self, msg: &Message) {
         match msg {
-            Message::NoteOff {chan: _, note, vel: _} => {
+            Message::NoteOff {
+                chan: _,
+                note,
+                vel: _,
+            } => {
                 let pitch = midi::map_note_equal(note);
                 self.note_off(pitch);
             }
-            Message::NoteOn {chan: _, note, vel} => {
+            Message::NoteOn { chan: _, note, vel } => {
                 let pitch = midi::map_note_equal(note);
                 if *vel == 0 {
                     self.note_off(pitch);
@@ -81,5 +91,4 @@ impl Instrument {
             _ => {}
         }
     }
-
 }

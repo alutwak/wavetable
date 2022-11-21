@@ -1,9 +1,9 @@
-use rustfft::{FftPlanner, num_complex::Complex};
-use std::cmp::Ordering::Equal;
 use num::FromPrimitive;
-use std::ffi::{CString, CStr};
+use rustfft::{num_complex::Complex, FftPlanner};
 use sndfile_sys as sndfile;
-use sndfile_sys::{SF_INFO, SFM_READ, SNDFILE, sf_count_t};
+use sndfile_sys::{sf_count_t, SFM_READ, SF_INFO, SNDFILE};
+use std::cmp::Ordering::Equal;
+use std::ffi::{CStr, CString};
 
 /** Reads an audio file and returns the audio in it as a vector
 
@@ -13,53 +13,57 @@ If the audio file has multiple tracks then these tracks are mixed together into 
 
 * `path`: The path to the audio file
 */
-pub  fn read_sndfile(path: &str) -> Result<(Vec<f32>, i32), std::io::Error> {
-        let mut info = SF_INFO {
-            frames: 0,
-            samplerate: 0,
-            channels: 0,
-            format: 0,
-            sections: 0,
-            seekable: 0
-        };
-        let c_path = CString::new(path).unwrap();
-        let sf: *mut SNDFILE = unsafe { sndfile::sf_open(c_path.as_ptr() as *mut _, SFM_READ, &mut info) };
-        if sf as usize == 0 {
-            let reason_pchar = unsafe { sndfile::sf_strerror(sf) };
-            let reason = unsafe { CStr::from_ptr(reason_pchar).to_str().unwrap() };
-            return Err( std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Unable to open {}. {}", path, reason))
-            );
-        }
+pub fn read_sndfile(path: &str) -> Result<(Vec<f32>, i32), std::io::Error> {
+    let mut info = SF_INFO {
+        frames: 0,
+        samplerate: 0,
+        channels: 0,
+        format: 0,
+        sections: 0,
+        seekable: 0,
+    };
+    let c_path = CString::new(path).unwrap();
+    let sf: *mut SNDFILE =
+        unsafe { sndfile::sf_open(c_path.as_ptr() as *mut _, SFM_READ, &mut info) };
+    if sf as usize == 0 {
+        let reason_pchar = unsafe { sndfile::sf_strerror(sf) };
+        let reason = unsafe { CStr::from_ptr(reason_pchar).to_str().unwrap() };
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Unable to open {}. {}", path, reason),
+        ));
+    }
 
-        let tablelen = (info.frames as f32).log2().floor().exp2() as usize;
-        let mut table = Vec::<f32>::with_capacity(tablelen * info.channels as usize);
-        let count = unsafe { sndfile::sf_readf_float(sf, table.as_mut_ptr(), tablelen as sf_count_t) };
-        unsafe { sndfile::sf_close(sf) };
+    let tablelen = (info.frames as f32).log2().floor().exp2() as usize;
+    let mut table = Vec::<f32>::with_capacity(tablelen * info.channels as usize);
+    let count = unsafe { sndfile::sf_readf_float(sf, table.as_mut_ptr(), tablelen as sf_count_t) };
+    unsafe { sndfile::sf_close(sf) };
 
-        if count as usize != tablelen {
-            return Err( std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("Read fewer frames than expected. Expected {}, got {}", tablelen, count)
-            ));
-        }
+    if count as usize != tablelen {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!(
+                "Read fewer frames than expected. Expected {}, got {}",
+                tablelen, count
+            ),
+        ));
+    }
 
-        // Tell table how many values it's holding
-        unsafe {table.set_len(tablelen * info.channels as usize) };
+    // Tell table how many values it's holding
+    unsafe { table.set_len(tablelen * info.channels as usize) };
 
-        // Mix all channels down to a single channel by averaging them
-        if info.channels > 1 {
-            let chans = info.channels as usize;
-            for i in 0..tablelen {
-                let mut mixed = 0.0f32;
-                for c in 0..chans {
-                    mixed += table[(i * chans) + c] / (chans as f32);
-                }
-                table[i] = mixed;
+    // Mix all channels down to a single channel by averaging them
+    if info.channels > 1 {
+        let chans = info.channels as usize;
+        for i in 0..tablelen {
+            let mut mixed = 0.0f32;
+            for c in 0..chans {
+                mixed += table[(i * chans) + c] / (chans as f32);
             }
-            table.truncate(tablelen);
+            table[i] = mixed;
         }
+        table.truncate(tablelen);
+    }
     Ok((table, info.samplerate))
 }
 
@@ -69,12 +73,11 @@ pub  fn read_sndfile(path: &str) -> Result<(Vec<f32>, i32), std::io::Error> {
 A vector of pairs, in which the first value is the peak frequency and the second is the amplitude
 */
 fn frequency_peaks(buffer: &[f32], threshold: f32) -> Vec<(f32, f32)> {
-
     let len_flt = buffer.len() as f32;
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_forward(buffer.len());
 
-    let mut fftbuf = vec![Complex{re: 0.0, im: 0.0}; buffer.len()];
+    let mut fftbuf = vec![Complex { re: 0.0, im: 0.0 }; buffer.len()];
 
     for (re, coef) in buffer.iter().zip(fftbuf.iter_mut()) {
         coef.re = *re;
@@ -85,19 +88,19 @@ fn frequency_peaks(buffer: &[f32], threshold: f32) -> Vec<(f32, f32)> {
     let mut peaks = Vec::new();
     let mut last_mag = 0.0;
     let mut was_peak = false;
-    let norm =  (buffer.len() as f32).sqrt();
+    let norm = (buffer.len() as f32).sqrt();
 
-    for (i, coef)  in fftbuf[..buffer.len()/2].iter().enumerate() {
+    for (i, coef) in fftbuf[..buffer.len() / 2].iter().enumerate() {
         let mag = coef.norm() / norm;
 
-        if  mag > last_mag {
+        if mag > last_mag {
             // mag is greater than local_max. make it the new local max
             was_peak = true;
         } else if was_peak {
             // No new local maxes in window. Push next peak and reset
             was_peak = false;
             if last_mag > threshold {
-                peaks.push(((i-1) as f32 / len_flt, last_mag));
+                peaks.push(((i - 1) as f32 / len_flt, last_mag));
             }
         }
         last_mag = mag;
@@ -112,7 +115,7 @@ TODO: The fundamental is defined as the highest-amplitude frequency. It may turn
 for some signals, in which case a more complex algorithm should be used.
 */
 pub fn fundamental(buffer: &[f32]) -> Option<f32> {
-    let min_harm = 1e-4;  // Don't return DC. 1e-4 is about 20Hz for fs of 192kHz
+    let min_harm = 1e-4; // Don't return DC. 1e-4 is about 20Hz for fs of 192kHz
     let sig_energy = signal_energy(buffer);
 
     /* Threshold of 1/1000th of signal energy
@@ -132,7 +135,7 @@ pub fn fundamental(buffer: &[f32]) -> Option<f32> {
 /** Returns the total energy of the given signal
 */
 pub fn signal_energy(buffer: &[f32]) -> f32 {
-    buffer.iter().fold(0.0, |sum, v| sum + v*v)
+    buffer.iter().fold(0.0, |sum, v| sum + v * v)
 }
 
 /** Returns the root-mean-square amplitude of the given audio signal
@@ -158,9 +161,7 @@ pub fn best_waveform(buffer: &[f32]) -> Option<&[f32]> {
     let mut best_cycle = (0, 0);
     for i in 1..buffer.len() - spc {
         // Check for zero-crossing pairs spc dist away
-        if buffer[i] * buffer[i - 1] <= 0.0 &&
-            buffer[i + spc - 1] * buffer[i + spc] <= 0.0
-        {
+        if buffer[i] * buffer[i - 1] <= 0.0 && buffer[i + spc - 1] * buffer[i + spc] <= 0.0 {
             let rms = rms(&buffer[i..i + spc]);
             if rms > best_rms {
                 best_cycle = (i, i + spc);
@@ -168,7 +169,10 @@ pub fn best_waveform(buffer: &[f32]) -> Option<&[f32]> {
             }
         }
     }
-    println!("waveform: [{}:{}]: {}", best_cycle.0, best_cycle.1, best_rms);
+    println!(
+        "waveform: [{}:{}]: {}",
+        best_cycle.0, best_cycle.1, best_rms
+    );
 
     if best_cycle.0 == 0 && best_cycle.1 == 0 {
         None
@@ -219,20 +223,19 @@ pub fn resample(buffer: &[f32], len: usize, wrap: bool) -> Vec<f32> {
 /** Returns the next power of two that is greater than or equal to x
 */
 pub fn next_pow_of_2<T>(x: T) -> T
-where T: std::ops::Add<Output = T> + num::FromPrimitive + num::ToPrimitive
+where
+    T: std::ops::Add<Output = T> + num::FromPrimitive + num::ToPrimitive,
 {
     let xf64 = x.to_f64().unwrap();
-    let next_p2 = 2f64.powf(
-        xf64.log2().ceil()
-    );
+    let next_p2 = 2f64.powf(xf64.log2().ceil());
     FromPrimitive::from_f64(next_p2).unwrap()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{frequency_peaks, read_sndfile, best_waveform, signal_energy, resample};
-    use rand::{thread_rng, Rng};
+    use super::{best_waveform, frequency_peaks, read_sndfile, resample, signal_energy};
     use float_cmp::approx_eq;
+    use rand::{thread_rng, Rng};
 
     fn generate_triangle(len: usize, cps: f32) -> Vec<f32> {
         let slope = 4.0 * cps;
@@ -251,9 +254,7 @@ mod tests {
 
     fn generate_noise(len: usize) -> Vec<f32> {
         let mut rng = thread_rng();
-        Vec::from_iter((0..len).map(move |_| {
-            rng.gen_range(-1.0..=1.0)
-        }))
+        Vec::from_iter((0..len).map(move |_| rng.gen_range(-1.0..=1.0)))
     }
 
     #[test]
@@ -276,8 +277,11 @@ mod tests {
         for (i, peak) in peaks[..5].iter().enumerate() {
             println!("peak {}: {} ({})", i, peak.0 * fs, peak.1);
             assert!(
-                approx_eq!(f32, peak.0, exp_next_peak, epsilon=0.01 * exp_next_peak),
-                "Expected harmonic {}: {}. Got {}", i, exp_next_peak, peak.0
+                approx_eq!(f32, peak.0, exp_next_peak, epsilon = 0.01 * exp_next_peak),
+                "Expected harmonic {}: {}. Got {}",
+                i,
+                exp_next_peak,
+                peak.0
             );
             exp_next_peak += 2.0 * exp_fundamental;
         }
@@ -299,12 +303,19 @@ mod tests {
         for (i, peak) in peaks[..peaks.len().min(20)].iter().enumerate() {
             // Check if the ratio of peak freq to expected fundamental is about integral
             let ratio = peak.0 / exp_fundamental;
-            println!("peak {}: {} ({}) -> ratio {} ({})",
-                     i, peak.0 * fs as f32, peak.1, ratio, ratio - ratio.round()
+            println!(
+                "peak {}: {} ({}) -> ratio {} ({})",
+                i,
+                peak.0 * fs as f32,
+                peak.1,
+                ratio,
+                ratio - ratio.round()
             );
             assert!(
-                approx_eq!(f32, ratio - ratio.round(), 0.0, epsilon=0.05),
-                "Harmonic {}: expected nearly integral ratio. Got ratio of {}", i, ratio,
+                approx_eq!(f32, ratio - ratio.round(), 0.0, epsilon = 0.05),
+                "Harmonic {}: expected nearly integral ratio. Got ratio of {}",
+                i,
+                ratio,
             );
         }
     }
@@ -316,7 +327,8 @@ mod tests {
         let peaks = frequency_peaks(&signal, 1e-3 * sig_energy);
         assert!(
             peaks.is_empty(),
-            "Expected to find no peaks in noise signal. Found: {}", peaks.len()
+            "Expected to find no peaks in noise signal. Found: {}",
+            peaks.len()
         );
     }
 
@@ -332,15 +344,16 @@ mod tests {
         // Expect waveform to start near 0, and go through one cycle and end at 0
         println!("Triangle waveform len: {}", wf.len());
         assert!(
-            approx_eq!(f32, wf[0], 0.0, epsilon=slope),
-            "Expected waveform to start at ~0.0, started at {}", wf[0]
+            approx_eq!(f32, wf[0], 0.0, epsilon = slope),
+            "Expected waveform to start at ~0.0, started at {}",
+            wf[0]
         );
 
         let mut last_dir = (wf[1] - wf[0]).signum();
         let mut dir_changes = 0;
         for i in 1..wf.len() {
             //println!("{}", wf[i]);
-            let dir = (wf[i] - wf[i-1]).signum();
+            let dir = (wf[i] - wf[i - 1]).signum();
             if dir != last_dir {
                 // Don't check the slope when the direction changes
                 last_dir = dir;
@@ -348,10 +361,15 @@ mod tests {
             }
         }
 
-        assert!(dir_changes == 2, "Expected exactly one cycle, got {}", dir_changes as f32 / 2.0);
         assert!(
-            approx_eq!(f32, wf[wf.len()-1], 0.0, epsilon=slope),
-            "Expected waveform to end at ~0.0, started at {}", wf[wf.len()-1]
+            dir_changes == 2,
+            "Expected exactly one cycle, got {}",
+            dir_changes as f32 / 2.0
+        );
+        assert!(
+            approx_eq!(f32, wf[wf.len() - 1], 0.0, epsilon = slope),
+            "Expected waveform to end at ~0.0, started at {}",
+            wf[wf.len() - 1]
         );
     }
 
@@ -377,11 +395,13 @@ mod tests {
         let control = generate_triangle(outlen, outfreq);
         for (i, (ctl, tst)) in control.iter().zip(resamp.iter()).enumerate() {
             assert!(
-                approx_eq!(f32, *ctl, *tst, epsilon=1e-3)  ,
-                "Expected sample {} value: {}. Got {}", i, ctl, tst
+                approx_eq!(f32, *ctl, *tst, epsilon = 1e-3),
+                "Expected sample {} value: {}. Got {}",
+                i,
+                ctl,
+                tst
             );
         }
-
     }
 
     #[test]
@@ -399,11 +419,12 @@ mod tests {
         let control = generate_triangle(outlen, outfreq);
         for (i, (ctl, tst)) in control.iter().zip(resamp.iter()).enumerate() {
             assert!(
-                approx_eq!(f32, *ctl, *tst, epsilon=1e-3)  ,
-                "Expected sample {} value: {}. Got {}", i, ctl, tst
+                approx_eq!(f32, *ctl, *tst, epsilon = 1e-3),
+                "Expected sample {} value: {}. Got {}",
+                i,
+                ctl,
+                tst
             );
         }
-
     }
-
 }

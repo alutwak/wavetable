@@ -203,10 +203,14 @@ impl Wavetable {
     pub fn from_sndfile(path: &str, trim: bool) -> Result<Self, std::io::Error> {
         let (mut table, _) = utils::read_sndfile(path)?;
         if trim {
-            table = utils::best_waveform(&table).ok_or_else(|| std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to find acceptable waveform in {}", path)
-                ))?.to_vec();
+            table = utils::best_waveform(&table)
+                .ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to find acceptable waveform in {}", path),
+                    )
+                })?
+                .to_vec();
         }
 
         let final_len = utils::next_pow_of_2(table.len());
@@ -214,9 +218,7 @@ impl Wavetable {
         if final_len == table.len() {
             Ok(Wavetable::new(&table))
         } else {
-            Ok(Wavetable::new(
-                &utils::resample(&table, final_len, true)
-            ))
+            Ok(Wavetable::new(&utils::resample(&table, final_len, true)))
         }
     }
 
@@ -239,13 +241,12 @@ impl Wavetable {
 const XLOBITS1: i32 = 16;
 
 impl Phasor {
-
     /** Creates a new phasor for the given Wavetable
-    
+
     # Arguments
     * `system`: The System parameters
     * `table`:  The wavetable to reference
-    
+
     # Returns
     A Phasor that will generate signals from the given Wavetable.
     */
@@ -331,7 +332,7 @@ fn phase_frac1(phase: i32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::super::system::System;
-    use super::{Wavetable, Phasor};
+    use super::{Phasor, Wavetable};
     use float_cmp::approx_eq;
     use std::f32::consts::PI;
     use std::sync::Arc;
@@ -502,7 +503,7 @@ mod tests {
     #[test]
     fn test_from_sndfile() {
         let wt = Wavetable::from_sndfile("test/saw.wav", false).unwrap();
-        assert_eq!(wt.len(), 1024);  // saw.wav length is 1024 samples
+        assert_eq!(wt.len(), 1024); // saw.wav length is 1024 samples
         let wt = Arc::new(wt);
 
         let fs = 32768.0;
@@ -532,19 +533,29 @@ mod tests {
                     let expected = sample * slope;
                     assert!(
                         approx_eq!(f32, *out, expected, epsilon = 1e-3),
-                        "out[{}] = {}, expected: {}", sample, *out, expected
+                        "out[{}] = {}, expected: {}",
+                        sample,
+                        *out,
+                        expected
                     );
                 } else if sample < fall_edge_end {
-                    let expected = saw_max - ((saw_max - saw_min) / samp_len) * (sample - fall_edge_start);
+                    let expected =
+                        saw_max - ((saw_max - saw_min) / samp_len) * (sample - fall_edge_start);
                     assert!(
                         approx_eq!(f32, *out, expected, epsilon = 1e-3),
-                        "out[{}] = {}, expected: {}", sample, *out, expected
+                        "out[{}] = {}, expected: {}",
+                        sample,
+                        *out,
+                        expected
                     );
                 } else {
                     let expected = saw_min + slope * (sample - fall_edge_end);
                     assert!(
                         approx_eq!(f32, *out, expected, epsilon = 1e-3),
-                        "out[{}] = {}, expected: {}", sample, *out, expected
+                        "out[{}] = {}, expected: {}",
+                        sample,
+                        *out,
+                        expected
                     );
                 };
             }
@@ -554,7 +565,6 @@ mod tests {
     #[test]
     fn test_from_sndfile_trim() {
         let wt = Wavetable::from_sndfile("test/LongVoice.wav", true).unwrap();
-        assert_eq!(wt.len(), 512);  // LongVoice.wav fundamental is 469 samps long, which rounds up to 512 samples
+        assert_eq!(wt.len(), 512); // LongVoice.wav fundamental is 469 samps long, which rounds up to 512 samples
     }
-
 }

@@ -1,6 +1,6 @@
+use self::EnvStage::*;
 use super::system::System;
 use std::sync::{Arc, Mutex};
-use self::EnvStage::*;
 
 /** A thread-safe gate signal that controls when the envelope starts the attack and release stages
 

@@ -1,5 +1,5 @@
-use super::envelope::EnvStage::*;
 use super::envelope;
+use super::envelope::EnvStage::*;
 use super::envelope::{Gate, ASDR};
 use super::system::System;
 use super::wt::{Phasor, Wavetable};
@@ -26,9 +26,8 @@ pub struct Voice {
 }
 
 impl Voice {
-
     /** Creates a new Voice
-    
+
     # Arguments
     * `system`: The System parameters
     * `table`:  The wavetable that the voice will use
@@ -57,7 +56,7 @@ impl Voice {
     }
 
     /** Start the attack stage of a note
-    
+
     # Arguments
     * `level`: The new note's level
     * `pitch`: The new note's pitch (in Hz)
@@ -70,13 +69,13 @@ impl Voice {
     }
 
     /** Starts the release stage of the note
-    */
+     */
     pub fn note_off(&mut self) {
         envelope::write_gate(&self.gate, 0.0);
     }
 
     /** Calculates the next set of output samples and returns them in the given buffer
-    
+
     # Arguments:
     * `outbuf`: The buffer in which to return the calculated samples
     */
@@ -89,7 +88,7 @@ impl Voice {
     }
 
     /** Returns whether the voice is currently active
-    
+
     A return value of true means that the voice is active.
     */
     pub fn active(&mut self) -> bool {
@@ -97,7 +96,7 @@ impl Voice {
     }
 
     /** Returns the current pitch of the voice
-    */
+     */
     pub fn pitch(&mut self) -> f32 {
         self.pitch
     }
