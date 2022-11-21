@@ -25,11 +25,10 @@ fn main() -> Result<(), i32> {
         args.bufsize,
     ));
 
-    let table = Wavetable::from_sndfile(&args.wavetable, false).map_err(
-        |e| {
-            println!("{}", e);
-            1
-        })?;
+    let table = Wavetable::from_sndfile(&args.wavetable, args.trim).map_err(|e| {
+        println!("{}", e);
+        1
+    })?;
 
     let table = Arc::new(table);
 
@@ -112,6 +111,10 @@ struct Args {
 
     /// Envelope release, in ms
     release: f32,
+
+    /// Whether to trim the waveform
+    #[clap(short, long)]
+    trim: bool,
 
     /// Optional MIDI device to use. If not given, then device will be queried
     #[clap(short, long)]
